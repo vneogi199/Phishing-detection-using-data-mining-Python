@@ -1,0 +1,15 @@
+Naive Bayes 92.9806
+
+J48         95.8752
+
+SVM         93.8037
+
+
+Neural
+Network     96.9064
+
+Random
+Forest      97.2592
+
+IBK Lazy
+Classifier  97.1777
