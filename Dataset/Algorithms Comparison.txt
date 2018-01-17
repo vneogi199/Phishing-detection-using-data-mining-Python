@@ -13,3 +13,20 @@ Forest      97.2592
 
 IBK Lazy
 Classifier  97.1777
+
+
+
+Training
+{
+  "trainUrl":"data://vneogi199/training/Algorithmia-phishing.arff",
+  "mode":"train",
+  "modelUrl":"data://.algo/temp/model.txt"
+}
+
+Testing at result = 1
+{
+  "trainUrl":"data://vneogi199/training/Algorithmia-phishing.arff",
+  "testUrl":"data://vneogi199/training/Algorithmia-phishing-test.arff",
+  "mode":"load",
+  "modelUrl":"data://.algo/temp/model.txt"
+}
