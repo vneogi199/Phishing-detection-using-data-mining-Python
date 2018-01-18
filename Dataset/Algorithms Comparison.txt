@@ -22,6 +22,12 @@ Training
   "mode":"train",
   "modelUrl":"data://.algo/temp/model.txt"
 }
+curl -X POST -d '{
+  "trainUrl":"data://vneogi199/training/Algorithmia-phishing.arff",
+  "mode":"train",
+  "modelUrl":"data://.algo/temp/model.txt"
+}' -H 'Content-Type: application/json' -H 'Authorization: Simple ***REMOVED***' https://api.algorithmia.com/v1/algo/weka/RandomForest/0.1.1
+
 
 Testing at result = 1
 {
@@ -30,3 +36,17 @@ Testing at result = 1
   "mode":"load",
   "modelUrl":"data://.algo/temp/model.txt"
 }
+
+curl -X POST -d '{
+  "trainUrl":"data://vneogi199/training/Algorithmia-phishing.arff",
+  "testUrl":"data://vneogi199/training/Algorithmia-phishing-test.arff",
+  "mode":"load",
+  "modelUrl":"data://.algo/temp/model.txt"
+}' -H 'Content-Type: application/json' -H 'Authorization: Simple ***REMOVED***' https://api.algorithmia.com/v1/algo/weka/RandomForest/0.1.1
+
+
+
+
+Test Sites
+https://blog.lateral.io/
+https://accounts.google.com
