@@ -9,8 +9,8 @@
   },
   "content_scripts": [{
     "css": ["styles.css"],
-    "js": ["content.js"],
-    "matches": ["https://blog.lateral.io/*"]
+    "js": ["bundle.js"],
+    "matches": ["<all_urls>"]
   },
   {
     "css": ["styles1.css"],
