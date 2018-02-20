@@ -9,7 +9,7 @@
   },
   "content_scripts": [{
     "css": ["styles.css"],
-    "js": ["content.js"],
+    "js": ["browserReadyBundle.js"],
     "matches": ["https://blog.lateral.io/*"]
   },
   {

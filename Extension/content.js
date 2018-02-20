@@ -106,16 +106,21 @@ Abnormal_URL=checkAbnormalURL();
 age_of_domain=calcAge();
 SSLfinal_State=datediff();
 
+var algorithmia = require("algorithmia");
 
-// var alexa = require('alexarank');
+var input = "vneogi199";
+var client = algorithmia.client("***REMOVED***");
 
-// alexa("http://www.echojs.com/", function(error, result) {
-//     if (!error) {
-//         console.log("success");
-//     } else {
-//         console.log("error");
-//     }
-// });
+client.algo("algo://demo/Hello/")
+       .pipe(input)
+       .then(function(response) {
+         console.log(response.get());
+       });
+
+
+
+
+
 // var div = document.createElement("div");
 // div.setAttribute("id", "se-pre-con");
 // document.body.appendChild(div);
