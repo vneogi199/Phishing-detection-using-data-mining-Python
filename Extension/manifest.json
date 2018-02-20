@@ -9,8 +9,13 @@
   },
   "content_scripts": [{
     "css": ["styles.css"],
+<<<<<<< HEAD
     "js": ["browserReadyBundle.js"],
     "matches": ["https://blog.lateral.io/*"]
+=======
+    "js": ["bundle.js"],
+    "matches": ["<all_urls>"]
+>>>>>>> 394ab41923e67aed95258221690393e98ca4fea5
   },
   {
     "css": ["styles1.css"],

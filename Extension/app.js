@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 var sslCertficate = require('get-ssl-certificate');
 sslCertficate.get(window.location.hostname).then(function (certificate) {
   console.log(certificate);
@@ -16,3 +17,10 @@ sslCertficate.get(window.location.hostname).then(function (certificate) {
   console.log(certificate.valid_to)
   // 'Aug 22 23:59:59 2017 GMT'
 });
+=======
+var whois = require('whois-json');
+
+whois('google.com', function(err, result){
+	console.log(JSON.stringify(result, null, 2))
+})
+>>>>>>> 394ab41923e67aed95258221690393e98ca4fea5
