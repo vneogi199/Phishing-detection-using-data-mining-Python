@@ -9,7 +9,7 @@
   },
   "content_scripts": [{
     "css": ["styles.css"],
-    "js": ["bundle.js"],
+    "js": ["rough.js"],
     "matches": ["<all_urls>"]
   },
   {

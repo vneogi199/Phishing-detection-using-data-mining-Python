@@ -1,0 +1,53 @@
+# Author: Alexander Tsepkov
+# Every single (non-comment) line in this file should raise a compile-time error
+# In case an error is not raised, the test fails
+
+# illegal operators
+a = 1 || 2
+a = 1 === 4
+a = 2; a++
+
+# invalid assignment
+1 = 5
+'foo' = 6
+[1, foo] = 3, 4
+(1, foo) = 3, 4
+
+# undeclared variables
+a += 1
+a = 5; def(): a += 1
+
+# exit statements outside their scope
+return 1
+yield 'ok'
+break
+
+# invalid args
+def(foo, 1): return
+def(foo, 'foo'): return
+def(foo, 1:Number): return
+
+# classes
+class One: def foo(): pass
+class One: get foo(): pass
+class One: get foo(self, i): pass
+class One: set foo(self): pass
+class One: set foo(self, bar, i): pass
+
+# hashes
+{ x: 1, get z(i): return x }
+
+# type-checking
+a = NaN; b = 5 + a
+a = undefined; b = 5 + a
+a = None; b = 'foo' + a
+a = [] + {}
+a = 1; b = 'string'; c = b - a
+a = []; b = -a
+a = []; b = 9; b -= a
+a = (def(b:Number, c:Number) -> String: return b + c;)(1, 2)
+def(a:[Date],b:Date) -> Date: a.push(b); return a
+def foo() -> Array: return []; b = 'a' + foo()
+foo = def() -> Array: return []; b = 'a' + foo()
+def foo(one:Number): return one; foo(1, 2)
+def foo(one:Number): return one; foo('foo')
