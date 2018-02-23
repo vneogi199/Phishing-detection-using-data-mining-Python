@@ -9,7 +9,19 @@
   },
   "content_scripts": [{
     "css": ["styles.css"],
+<<<<<<< HEAD
     "js": ["content.js"],
+=======
+<<<<<<< HEAD
+    "js": ["rough.js"],
+=======
+<<<<<<< HEAD
+    "js": ["browserReadyBundle.js"],
+    "matches": ["https://blog.lateral.io/*"]
+=======
+    "js": ["bundle.js"],
+>>>>>>> 236a01e309605a4d24a0befd911230b265682eab
+>>>>>>> 0d166245b41dec6a292e4ae4d820af2280253e4b
     "matches": ["<all_urls>"]
   },
   {
