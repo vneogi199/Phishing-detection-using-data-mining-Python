@@ -40,4 +40,5 @@ Algorithmia.client("***REMOVED***")
 .pipe(input)
 .then(function(output) {
     console.log(output);
+    
 });
