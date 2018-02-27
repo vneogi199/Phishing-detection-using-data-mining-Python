@@ -36,7 +36,7 @@ var input = `@relation phishing
 1,1,1,1,1,1,1,1,1,1,1,1,-1,-1,0,-1,1,1,0,1,1,1,1,-1,1,1,1,1,1,-1    
 `;
 Algorithmia.client("***REMOVED***")
-.algo("vneogi199/testData")
+.algo("vneogi199/WriteArff/0.1.7")
 .pipe(input)
 .then(function(output) {
     console.log(output.result);
