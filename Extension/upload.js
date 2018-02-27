@@ -1,22 +1,4 @@
 var Algorithmia = require('algorithmia');
-// var client = Algorithmia.client("***REMOVED***");
-
-// // Instantiate a DataDirectory object, set your data URI and call Create
-// var testData = client.dir("data://vneogi199/testData")
-// // Create your data collection if it does not exist
-// testData.exists(function(exists) {
-//     if (exists == false) {
-//         testData.create(function(response) {
-//             if (response.error) {
-//                 return console.log("Failed to create dir: " + response.error.message);
-//             }
-//             console.log("Created directory: " + testData.data_path);
-//         });
-//     } else {
-//         console.log("Your directory already exists.")
-//     }
-// });
-
 var input = `@relation phishing
 
 @attribute having_IP_Address {-1,1}
