@@ -1,751 +1,6 @@
 (function(){function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s}return e})()({1:[function(require,module,exports){
-(function (Buffer){
-var AlgoResponse, Algorithm, exports;
 
-Algorithm = (function() {
-  function Algorithm(client, path) {
-    this.client = client;
-    this.algo_path = path;
-    this.promise = {
-      then: (function(_this) {
-        return function(callback) {
-          return _this.callback = callback;
-        };
-      })(this)
-    };
-  }
-
-  Algorithm.prototype.pipe = function(input) {
-    var contentType, data;
-    data = input;
-    if (Buffer.isBuffer(input)) {
-      contentType = 'application/octet-stream';
-    } else if (typeof input === 'string') {
-      contentType = 'text/plain';
-    } else {
-      contentType = 'application/json';
-      data = JSON.stringify(input);
-    }
-    this.req = this.client.req('/v1/algo/' + this.algo_path, 'POST', data, {
-      'Content-Type': contentType
-    }, (function(_this) {
-      return function(response, status) {
-        return typeof _this.callback === "function" ? _this.callback(new AlgoResponse(response, status)) : void 0;
-      };
-    })(this));
-    return this.promise;
-  };
-
-  Algorithm.prototype.pipeJson = function(input) {
-    if (typeof input !== 'string') {
-      throw "Cannot convert " + (typeof input) + " to string";
-    }
-    this.req = this.client.req('/v1/algo/' + this.algo_path, 'POST', input, {
-      'Content-Type': 'application/json'
-    }, (function(_this) {
-      return function(response, status) {
-        return _this.callback(new AlgoResponse(response, status));
-      };
-    })(this));
-    return this.promise;
-  };
-
-  return Algorithm;
-
-})();
-
-AlgoResponse = (function() {
-  function AlgoResponse(response, status) {
-    this.status = status;
-    this.result = response.result;
-    this.error = response.error;
-    this.metadata = response.metadata;
-  }
-
-  AlgoResponse.prototype.get = function() {
-    if (this.error) {
-      throw "" + this.error.message;
-    }
-    switch (this.metadata.content_type) {
-      case "void":
-        return null;
-      case "text":
-      case "json":
-        return this.result;
-      case "binary":
-        return new Buffer(this.result, 'base64');
-      default:
-        throw "Unknown result content_type: " + this.metadata.content_type + ".";
-    }
-  };
-
-  return AlgoResponse;
-
-})();
-
-module.exports = exports = Algorithm;
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":9}],2:[function(require,module,exports){
-(function (process,Buffer){
-var Algorithm, AlgorithmiaClient, Data, algorithmia, defaultApiAddress, exports, http, https, packageJson, url;
-
-https = require('https');
-
-http = require('http');
-
-url = require('url');
-
-packageJson = require('../package.json');
-
-Algorithm = require('./algorithm.js');
-
-Data = require('./data.js');
-
-defaultApiAddress = 'https://api.algorithmia.com';
-
-AlgorithmiaClient = (function() {
-  function AlgorithmiaClient(key, address) {
-    this.apiAddress = address || process.env.ALGORITHMIA_API || defaultApiAddress;
-    key = key || process.env.ALGORITHMIA_API_KEY;
-    if (key) {
-      if (key.indexOf('Simple ') === 0) {
-        this.apiKey = key;
-      } else {
-        this.apiKey = 'Simple ' + key;
-      }
-    } else {
-      this.apiKey = '';
-    }
-  }
-
-  AlgorithmiaClient.prototype.algo = function(path) {
-    return new Algorithm(this, path);
-  };
-
-  AlgorithmiaClient.prototype.file = function(path) {
-    return new Data.File(this, path);
-  };
-
-  AlgorithmiaClient.prototype.dir = function(path) {
-    return new Data.Dir(this, path);
-  };
-
-  AlgorithmiaClient.prototype.req = function(path, method, data, cheaders, callback) {
-    var dheader, httpRequest, key, options, protocol, val;
-    dheader = {
-      'User-Agent': 'algorithmia-nodejs/' + packageJson.version + ' (NodeJS ' + process.version + ')'
-    };
-    if (this.apiKey) {
-      dheader['Authorization'] = this.apiKey;
-    }
-    for (key in cheaders) {
-      val = cheaders[key];
-      dheader[key] = val;
-    }
-    options = url.parse(this.apiAddress + path);
-    options.method = method;
-    options.headers = dheader;
-    protocol = options.protocol === 'https:' ? https : http;
-    httpRequest = protocol.request(options, function(res) {
-      var accept, chunks;
-      accept = dheader['Accept'];
-      if (accept === 'application/json' || accept === 'text/plain') {
-        res.setEncoding('utf8');
-      }
-      chunks = [];
-      res.on('data', function(chunk) {
-        return chunks.push(chunk);
-      });
-      res.on('end', function() {
-        var body, buff, ct;
-        ct = res.headers['content-type'];
-        if (typeof ct === 'string') {
-          if (ct.startsWith('application/json')) {
-            buff = chunks.join('');
-            body = buff === '' ? {} : JSON.parse(buff);
-          } else if (ct.startsWith('text/plain')) {
-            body = chunks.join('');
-          } else {
-            body = Buffer.concat(chunks);
-          }
-        }
-        if (callback) {
-          if (res.statusCode < 200 || res.statusCode >= 300) {
-            if (!body) {
-              body = {};
-            }
-            if (!body.error) {
-              if (res.headers['x-error-message']) {
-                body.error = {
-                  message: res.headers['x-error-message']
-                };
-              } else {
-                body.error = {
-                  message: 'HTTP Response: ' + res.statusCode
-                };
-              }
-            }
-          }
-          callback(body, res.statusCode);
-        }
-      });
-      return res;
-    });
-    httpRequest.on('error', function(err) {
-      var body;
-      body = {
-        error: {
-          message: err.message
-        }
-      };
-      if (callback) {
-        callback(body, 500);
-      }
-    });
-    if (options.method !== 'HEAD') {
-      httpRequest.write(data);
-    }
-    httpRequest.end();
-  };
-
-  return AlgorithmiaClient;
-
-})();
-
-algorithmia = function(key, address) {
-  return new AlgorithmiaClient(key, address);
-};
-
-algorithmia.client = function(key, address) {
-  return new AlgorithmiaClient(key, address);
-};
-
-algorithmia.algo = function(path) {
-  this.defaultClient = this.defaultClient || new AlgorithmiaClient();
-  return this.defaultClient.algo(path);
-};
-
-algorithmia.file = function(path) {
-  this.defaultClient = this.defaultClient || new AlgorithmiaClient();
-  return this.defaultClient.file(path);
-};
-
-module.exports = exports = algorithmia;
-
-}).call(this,require('_process'),require("buffer").Buffer)
-},{"../package.json":4,"./algorithm.js":1,"./data.js":3,"_process":20,"buffer":9,"http":35,"https":13,"url":41}],3:[function(require,module,exports){
-var Data, Dir, DirListing, File, exports, fs, path,
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
-
-path = require('path');
-
-fs = require('fs');
-
-Data = (function() {
-  function Data(client, path) {
-    this.client = client;
-    this.data_path = path.replace(/data\:\/\//, '');
-  }
-
-  Data.prototype.basename = function() {
-    return this.data_path.slice(this.data_path.lastIndexOf('/') + 1);
-  };
-
-  Data.prototype.parent = function() {
-    var offset;
-    offset = this.data_path.lastIndexOf('/');
-    if (offset >= 0) {
-      return new Dir(this.client, 'data://' + this.data_path.slice(0, offset));
-    } else {
-      return null;
-    }
-  };
-
-  return Data;
-
-})();
-
-File = (function(superClass) {
-  extend(File, superClass);
-
-  function File() {
-    return File.__super__.constructor.apply(this, arguments);
-  }
-
-  File.prototype.put = function(content, callback) {
-    var headers;
-    headers = {};
-    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
-  };
-
-  File.prototype.get = function(callback) {
-    var headers, innerCb;
-    headers = {
-      'Accept': 'application/octet-stream'
-    };
-    innerCb = function(response, status) {
-      var data, err;
-      err = (typeof response === 'object' && (response != null ? response.error : void 0)) ? response.error : null;
-      data = err === null ? response : null;
-      return callback(err, data);
-    };
-    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, innerCb);
-  };
-
-  File.prototype.putString = function(content, callback) {
-    var headers;
-    headers = {
-      'Content-Type': 'text/plain'
-    };
-    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
-  };
-
-  File.prototype.putJson = function(content, callback) {
-    var headers;
-    headers = {
-      'Content-Type': 'application/json'
-    };
-    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
-  };
-
-  File.prototype.getString = function(callback) {
-    var headers;
-    headers = {
-      'Accept': 'text/plain'
-    };
-    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, callback);
-  };
-
-  File.prototype.getJson = function(callback) {
-    var headers;
-    headers = {
-      'Accept': 'application/json'
-    };
-    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, callback);
-  };
-
-  File.prototype.exists = function(callback) {
-    var headers;
-    headers = {
-      'Accept': 'text/plain'
-    };
-    return this.client.req('/v1/data/' + this.data_path, 'HEAD', '', headers, function(response, status) {
-      if (status === 200) {
-        return callback(true);
-      } else {
-        return callback(false, status, response);
-      }
-    });
-  };
-
-  File.prototype["delete"] = function(callback) {
-    var headers;
-    headers = {
-      'Content-Type': 'text/plain'
-    };
-    return this.client.req('/v1/data/' + this.data_path, 'DELETE', '', headers, callback);
-  };
-
-  return File;
-
-})(Data);
-
-Dir = (function(superClass) {
-  extend(Dir, superClass);
-
-  function Dir() {
-    return Dir.__super__.constructor.apply(this, arguments);
-  }
-
-  Dir.prototype.create = function(callback) {
-    var content, headers;
-    content = {
-      name: this.basename()
-    };
-    headers = {
-      'Content-Type': 'application/json'
-    };
-    return this.client.req('/v1/data/' + this.parent().data_path, 'POST', JSON.stringify(content), headers, callback);
-  };
-
-  Dir.prototype.file = function(filename) {
-    return new File(this.client, 'data://' + this.data_path + '/' + filename);
-  };
-
-  Dir.prototype.putFile = function(filePath, callback) {
-    var filename;
-    filename = path.basename(filePath);
-    return fs.readFile(filePath, (function(_this) {
-      return function(err, data) {
-        return _this.file(filename).put(data, callback);
-      };
-    })(this));
-  };
-
-  Dir.prototype.iterator = function() {
-    var listing;
-    listing = new DirListing(this.client, this.data_path);
-    return listing.iterator();
-  };
-
-  Dir.prototype.forEach = function(callback) {
-    var listing;
-    listing = new DirListing(this.client, this.data_path);
-    return listing.forEach(callback);
-  };
-
-  Dir.prototype.forEachFile = function(callback) {
-    var listing;
-    listing = new DirListing(this.client, this.data_path);
-    return listing.forEach(function(err, item) {
-      if (item instanceof File) {
-        return callback(err, item);
-      }
-    });
-  };
-
-  Dir.prototype.forEachDir = function(callback) {
-    var listing;
-    listing = new DirListing(this.client, this.data_path);
-    return listing.forEach(function(err, item) {
-      if (item instanceof Dir) {
-        return callback(err, item);
-      }
-    });
-  };
-
-  Dir.prototype.exists = function(callback) {
-    var headers;
-    headers = {};
-    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, function(response, status) {
-      if (status === 200) {
-        return callback(true);
-      } else {
-        return callback(false, status, response);
-      }
-    });
-  };
-
-  Dir.prototype["delete"] = function(force, callback) {
-    var headers, query;
-    query = force ? '?force=true' : '';
-    headers = {
-      'Content-Type': 'text/plain'
-    };
-    return this.client.req('/v1/data/' + this.data_path + query, 'DELETE', '', headers, callback);
-  };
-
-  return Dir;
-
-})(Data);
-
-DirListing = (function() {
-  function DirListing(client, path) {
-    this.client = client;
-    this.data_path = path;
-    this.offset = 0;
-    this.error = null;
-    this.page = null;
-  }
-
-  DirListing.prototype.loadNextPage = function(cb) {
-    var headers, query;
-    headers = {};
-    query = this.page === null ? '' : "?marker=" + (encodeURIComponent(this.page.marker));
-    return this.client.req('/v1/data/' + this.data_path + query, 'GET', '', headers, (function(_this) {
-      return function(response, status) {
-        _this.offset = 0;
-        if (status === 200) {
-          _this.page = response;
-          _this.error = null;
-        } else {
-          _this.page = null;
-          _this.error = response.error;
-        }
-        if (cb) {
-          return cb();
-        }
-      };
-    })(this));
-  };
-
-  DirListing.prototype.forEach = function(cb) {
-    var iter, recurse, thenCb;
-    thenCb = null;
-    iter = this.iterator();
-    recurse = function(err, value) {
-      if (value === void 0) {
-        if (thenCb) {
-          return thenCb();
-        }
-      } else {
-        cb(err, value);
-        return iter.next(recurse);
-      }
-    };
-    iter.next(recurse);
-    return {
-      then: (function(_this) {
-        return function(cb) {
-          return thenCb = cb;
-        };
-      })(this)
-    };
-  };
-
-  DirListing.prototype.iterator = function() {
-    return {
-      next: (function(_this) {
-        return function(cb) {
-          var dir, dirCount, file, fileCount, nextResult, ref, ref1;
-          if (_this.error) {
-            cb(_this.error, void 0);
-          } else if (_this.page === null) {
-            _this.loadNextPage(function() {
-              return _this.iterator().next(cb);
-            });
-          } else {
-            dirCount = ((ref = _this.page.folders) != null ? ref.length : void 0) || 0;
-            fileCount = ((ref1 = _this.page.files) != null ? ref1.length : void 0) || 0;
-            if (_this.offset < dirCount) {
-              dir = _this.page.folders[_this.offset];
-              _this.offset++;
-              cb(null, new Dir(_this.client, 'data://' + _this.data_path + '/' + dir.name));
-            } else if (_this.offset < dirCount + fileCount) {
-              file = _this.page.files[_this.offset];
-              _this.offset++;
-              nextResult = new File(_this.client, 'data://' + _this.data_path + '/' + file.filename);
-              nextResult.last_modified = file.last_modified;
-              nextResult.size = file.size;
-              cb(null, nextResult);
-            } else if (_this.page.marker) {
-              _this.loadNextPage(function() {
-                return _this.iterator().next(cb);
-              });
-            } else {
-              cb(null, void 0);
-            }
-          }
-        };
-      })(this)
-    };
-  };
-
-  return DirListing;
-
-})();
-
-module.exports = exports = {
-  File: File,
-  Dir: Dir
-};
-
-},{"fs":6,"path":18}],4:[function(require,module,exports){
-module.exports={
-  "_from": "algorithmia",
-  "_id": "algorithmia@0.3.10",
-  "_inBundle": false,
-  "_integrity": "sha1-9xwgqf9WRmCk0c9zlHmV123jRQw=",
-  "_location": "/algorithmia",
-  "_phantomChildren": {},
-  "_requested": {
-    "type": "tag",
-    "registry": true,
-    "raw": "algorithmia",
-    "name": "algorithmia",
-    "escapedName": "algorithmia",
-    "rawSpec": "",
-    "saveSpec": null,
-    "fetchSpec": "latest"
-  },
-  "_requiredBy": [
-    "#USER"],
-  "_args": [
-    [
-      "algorithmia",
-      "/media/vinit/Data/Phishing-detection-using-data-mining/Extension"
-    ]
-  ],
-  "_from": "algorithmia@latest",
-  "_id": "algorithmia@0.3.10",
-  "_inCache": true,
-  "_installable": true,
-  "_location": "/algorithmia",
-  "_nodeVersion": "6.5.0",
-  "_npmOperationalInternal": {
-    "host": "s3://npm-registry-packages",
-    "tmp": "tmp/algorithmia-0.3.10.tgz_1499405400085_0.7770562872756273"
-  },
-  "_npmUser": {
-    "email": "anowell@gmail.com",
-    "name": "anowell"
-  },
-  "_npmVersion": "3.10.3",
-  "_phantomChildren": {},
-  "_requested": {
-    "name": "algorithmia",
-    "raw": "algorithmia",
-    "rawSpec": "",
-    "scope": null,
-    "spec": "latest",
-    "type": "tag"
-  },
-  "_requiredBy": [
-    "/"
-  ],
-  "_resolved": "https://registry.npmjs.org/algorithmia/-/algorithmia-0.3.10.tgz",
-  "_shasum": "f71c20a9ff564660a4d1cf73947995d76de3450c",
-  "_spec": "algorithmia",
-  "_where": "C:\\Users\\PROJECT\\Desktop\\Phishing-detection-using-data-mining\\Extension",
-  "bugs": {
-    "url": "https://github.com/algorithmiaio/algorithmia-nodejs/issues"
-  },
-  "bundleDependencies": false,
-  "dependencies": {},
-  "deprecated": false,
-  "_shrinkwrap": null,
-  "_spec": "algorithmia",
-  "_where": "/media/vinit/Data/Phishing-detection-using-data-mining/Extension",
-  "bugs": {
-    "url": "https://github.com/algorithmiaio/algorithmia-nodejs/issues"
-  },
-  "dependencies": {},
-  "description": "Client library for calling algorithms in the Algorithmia marketplace",
-  "devDependencies": {
-    "gulp": "3.9.*",
-    "gulp-coffee": "2.3.*"
-  },
-  "homepage": "https://github.com/algorithmiaio/algorithmia-nodejs#readme",
-  "keywords": [
-    "algorithm",
-    "cloud",
-    "api"
-  ],
-  "license": "MIT",
-  "main": "./lib/algorithmia.js",
-  "name": "algorithmia",
-  "directories": {},
-  "dist": {
-    "shasum": "f71c20a9ff564660a4d1cf73947995d76de3450c",
-    "tarball": "https://registry.npmjs.org/algorithmia/-/algorithmia-0.3.10.tgz"
-  },
-  "gitHead": "169170e9529daa017e15bd7076d4c1143c5f66bf",
-  "homepage": "https://github.com/algorithmiaio/algorithmia-nodejs#readme",
-  "keywords": [
-    "algorithm",
-    "api",
-    "cloud"
-  ],
-  "license": "MIT",
-  "main": "./lib/algorithmia.js",
-  "maintainers": [
-    {
-      "name": "anowell",
-      "email": "anowell@gmail.com"
-    },
-    {
-      "name": "jamesatha",
-      "email": "jamesa@algorithmia.io"
-    },
-    {
-      "name": "pmcquighan",
-      "email": "pmcquighan@gmail.com"
-    }
-  ],
-  "name": "algorithmia",
-  "optionalDependencies": {},
-  "readme": "ERROR: No README data found!",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/algorithmiaio/algorithmia-nodejs.git"
-  },
-  "scripts": {},
-  "url": "http://github.com/algorithmiaio/algorithmia-nodejs",
-  "version": "0.3.10"
-}
-
-},{}],5:[function(require,module,exports){
-var Algorithmia = require('algorithmia');
-// var client = Algorithmia.client("***REMOVED***");
-
-// // Instantiate a DataDirectory object, set your data URI and call Create
-// var testData = client.dir("data://vneogi199/testData")
-// // Create your data collection if it does not exist
-// testData.exists(function(exists) {
-//     if (exists == false) {
-//         testData.create(function(response) {
-//             if (response.error) {
-//                 return console.log("Failed to create dir: " + response.error.message);
-//             }
-//             console.log("Created directory: " + testData.data_path);
-//         });
-//     } else {
-//         console.log("Your directory already exists.")
-//     }
-// });
-
-var input = `@relation phishing
-
-@attribute having_IP_Address {-1,1}
-@attribute URL_Length {1,0,-1}
-@attribute Shortining_Service {1,-1}
-@attribute having_At_Symbol {1,-1}
-@attribute double_slash_redirecting {-1,1}
-@attribute Prefix_Suffix {-1,1}
-@attribute having_Sub_Domain {-1,0,1}
-@attribute SSLfinal_State {-1,1,0}
-@attribute Domain_registeration_length {-1,1}
-@attribute Favicon {1,-1}
-@attribute port {1,-1}
-@attribute HTTPS_token {-1,1}
-@attribute Request_URL {1,-1}
-@attribute URL_of_Anchor {-1,0,1}
-@attribute Links_in_tags {1,-1,0}
-@attribute SFH {-1,1,0}
-@attribute Submitting_to_email {-1,1}
-@attribute Abnormal_URL {-1,1}
-@attribute Redirect {0,1}
-@attribute on_mouseover {1,-1}
-@attribute RightClick {1,-1}
-@attribute popUpWidnow {1,-1}
-@attribute Iframe {1,-1}
-@attribute age_of_domain {-1,1}
-@attribute DNSRecord {-1,1}
-@attribute web_traffic {-1,0,1}
-@attribute Page_Rank {-1,1}
-@attribute Google_Index {1,-1}
-@attribute Statistical_report {-1,1}
-@attribute Result {-1,1}
-
-@data
-1,1,1,1,1,1,1,1,1,1,1,1,-1,-1,0,-1,1,1,0,1,1,1,1,-1,1,1,1,1,1,-1    
-`;
-Algorithmia.client("***REMOVED***")
-// .algo("vneogi199/testData")
-.algo(".algo/vneogi199/testData/temp")
-.pipe(input)
-.then(function(output) {
-    console.log(output.result);
-	var input1 = {
-		"trainUrl":"data://vneogi199/training/Algorithmia-phishing.arff",
-		// "testUrl":"data://.algo/vneogi199/WriteArff/temp/"+output.result.split('/')[output.result.split('/').length-1],
-		"testUrl":output.result,
-		"mode":"load",
-		"modelUrl":"data://.algo/weka/WekaClassification/perm/model.txt"
-	};
-	console.log(input1);
-	Algorithmia.client("***REMOVED***")
-	    .algo("weka/RandomForest/0.1.1")
-	    .pipe(input1)
-	    .then(function(output) {
-	        console.log(output);
-    });
-});
-},{"algorithmia":2}],6:[function(require,module,exports){
-
-},{}],7:[function(require,module,exports){
+},{}],2:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -863,9 +118,9 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],8:[function(require,module,exports){
-arguments[4][6][0].apply(exports,arguments)
-},{"dup":6}],9:[function(require,module,exports){
+},{}],3:[function(require,module,exports){
+arguments[4][1][0].apply(exports,arguments)
+},{"dup":1}],4:[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -2603,7 +1858,7 @@ function numberIsNaN (obj) {
   return obj !== obj // eslint-disable-line no-self-compare
 }
 
-},{"base64-js":7,"ieee754":14}],10:[function(require,module,exports){
+},{"base64-js":2,"ieee754":9}],5:[function(require,module,exports){
 module.exports = {
   "100": "Continue",
   "101": "Switching Protocols",
@@ -2669,7 +1924,7 @@ module.exports = {
   "511": "Network Authentication Required"
 }
 
-},{}],11:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 (function (Buffer){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -2780,7 +2035,7 @@ function objectToString(o) {
 }
 
 }).call(this,{"isBuffer":require("../../is-buffer/index.js")})
-},{"../../is-buffer/index.js":16}],12:[function(require,module,exports){
+},{"../../is-buffer/index.js":11}],7:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3301,7 +2556,7 @@ function functionBindPolyfill(context) {
   };
 }
 
-},{}],13:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 var http = require('http')
 var url = require('url')
 
@@ -3334,7 +2589,7 @@ function validateParams (params) {
   return params
 }
 
-},{"http":35,"url":41}],14:[function(require,module,exports){
+},{"http":30,"url":36}],9:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
   var eLen = nBytes * 8 - mLen - 1
@@ -3420,7 +2675,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],15:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -3445,7 +2700,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],16:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -3468,14 +2723,14 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],17:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 var toString = {}.toString;
 
 module.exports = Array.isArray || function (arr) {
   return toString.call(arr) == '[object Array]';
 };
 
-},{}],18:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -3703,7 +2958,7 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":20}],19:[function(require,module,exports){
+},{"_process":15}],14:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -3751,7 +3006,7 @@ function nextTick(fn, arg1, arg2, arg3) {
 
 
 }).call(this,require('_process'))
-},{"_process":20}],20:[function(require,module,exports){
+},{"_process":15}],15:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -3937,7 +3192,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],21:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 ;(function(root) {
@@ -4474,7 +3729,7 @@ process.umask = function() { return 0; };
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],22:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4560,7 +3815,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],23:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4647,13 +3902,13 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],24:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":22,"./encode":23}],25:[function(require,module,exports){
+},{"./decode":17,"./encode":18}],20:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4778,7 +4033,7 @@ function forEach(xs, f) {
     f(xs[i], i);
   }
 }
-},{"./_stream_readable":27,"./_stream_writable":29,"core-util-is":11,"inherits":15,"process-nextick-args":19}],26:[function(require,module,exports){
+},{"./_stream_readable":22,"./_stream_writable":24,"core-util-is":6,"inherits":10,"process-nextick-args":14}],21:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4826,7 +4081,7 @@ function PassThrough(options) {
 PassThrough.prototype._transform = function (chunk, encoding, cb) {
   cb(null, chunk);
 };
-},{"./_stream_transform":28,"core-util-is":11,"inherits":15}],27:[function(require,module,exports){
+},{"./_stream_transform":23,"core-util-is":6,"inherits":10}],22:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -5844,7 +5099,7 @@ function indexOf(xs, x) {
   return -1;
 }
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./_stream_duplex":25,"./internal/streams/BufferList":30,"./internal/streams/destroy":31,"./internal/streams/stream":32,"_process":20,"core-util-is":11,"events":12,"inherits":15,"isarray":17,"process-nextick-args":19,"safe-buffer":34,"string_decoder/":39,"util":8}],28:[function(require,module,exports){
+},{"./_stream_duplex":20,"./internal/streams/BufferList":25,"./internal/streams/destroy":26,"./internal/streams/stream":27,"_process":15,"core-util-is":6,"events":7,"inherits":10,"isarray":12,"process-nextick-args":14,"safe-buffer":29,"string_decoder/":34,"util":3}],23:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6059,7 +5314,7 @@ function done(stream, er, data) {
 
   return stream.push(null);
 }
-},{"./_stream_duplex":25,"core-util-is":11,"inherits":15}],29:[function(require,module,exports){
+},{"./_stream_duplex":20,"core-util-is":6,"inherits":10}],24:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -6739,7 +5994,7 @@ Writable.prototype._destroy = function (err, cb) {
   cb(err);
 };
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./_stream_duplex":25,"./internal/streams/destroy":31,"./internal/streams/stream":32,"_process":20,"core-util-is":11,"inherits":15,"process-nextick-args":19,"safe-buffer":34,"util-deprecate":43}],30:[function(require,module,exports){
+},{"./_stream_duplex":20,"./internal/streams/destroy":26,"./internal/streams/stream":27,"_process":15,"core-util-is":6,"inherits":10,"process-nextick-args":14,"safe-buffer":29,"util-deprecate":38}],25:[function(require,module,exports){
 'use strict';
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
@@ -6819,7 +6074,7 @@ if (util && util.inspect && util.inspect.custom) {
     return this.constructor.name + ' ' + obj;
   };
 }
-},{"safe-buffer":34,"util":8}],31:[function(require,module,exports){
+},{"safe-buffer":29,"util":3}],26:[function(require,module,exports){
 'use strict';
 
 /*<replacement>*/
@@ -6894,10 +6149,10 @@ module.exports = {
   destroy: destroy,
   undestroy: undestroy
 };
-},{"process-nextick-args":19}],32:[function(require,module,exports){
+},{"process-nextick-args":14}],27:[function(require,module,exports){
 module.exports = require('events').EventEmitter;
 
-},{"events":12}],33:[function(require,module,exports){
+},{"events":7}],28:[function(require,module,exports){
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Stream = exports;
 exports.Readable = exports;
@@ -6906,7 +6161,7 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":25,"./lib/_stream_passthrough.js":26,"./lib/_stream_readable.js":27,"./lib/_stream_transform.js":28,"./lib/_stream_writable.js":29}],34:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":20,"./lib/_stream_passthrough.js":21,"./lib/_stream_readable.js":22,"./lib/_stream_transform.js":23,"./lib/_stream_writable.js":24}],29:[function(require,module,exports){
 /* eslint-disable node/no-deprecated-api */
 var buffer = require('buffer')
 var Buffer = buffer.Buffer
@@ -6970,7 +6225,7 @@ SafeBuffer.allocUnsafeSlow = function (size) {
   return buffer.SlowBuffer(size)
 }
 
-},{"buffer":9}],35:[function(require,module,exports){
+},{"buffer":4}],30:[function(require,module,exports){
 (function (global){
 var ClientRequest = require('./lib/request')
 var IncomingMessage = require('./lib/response')
@@ -7056,7 +6311,7 @@ http.METHODS = [
 	'UNSUBSCRIBE'
 ]
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./lib/request":37,"./lib/response":38,"builtin-status-codes":10,"url":41,"xtend":44}],36:[function(require,module,exports){
+},{"./lib/request":32,"./lib/response":33,"builtin-status-codes":5,"url":36,"xtend":39}],31:[function(require,module,exports){
 (function (global){
 exports.fetch = isFunction(global.fetch) && isFunction(global.ReadableStream)
 
@@ -7133,7 +6388,7 @@ function isFunction (value) {
 xhr = null // Help gc
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],37:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 (function (process,global,Buffer){
 var capability = require('./capability')
 var inherits = require('inherits')
@@ -7460,7 +6715,7 @@ var unsafeHeaders = [
 ]
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"./capability":36,"./response":38,"_process":20,"buffer":9,"inherits":15,"readable-stream":33,"to-arraybuffer":40}],38:[function(require,module,exports){
+},{"./capability":31,"./response":33,"_process":15,"buffer":4,"inherits":10,"readable-stream":28,"to-arraybuffer":35}],33:[function(require,module,exports){
 (function (process,global,Buffer){
 var capability = require('./capability')
 var inherits = require('inherits')
@@ -7681,7 +6936,7 @@ IncomingMessage.prototype._onXHRProgress = function () {
 }
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"./capability":36,"_process":20,"buffer":9,"inherits":15,"readable-stream":33}],39:[function(require,module,exports){
+},{"./capability":31,"_process":15,"buffer":4,"inherits":10,"readable-stream":28}],34:[function(require,module,exports){
 'use strict';
 
 var Buffer = require('safe-buffer').Buffer;
@@ -7954,7 +7209,7 @@ function simpleWrite(buf) {
 function simpleEnd(buf) {
   return buf && buf.length ? this.write(buf) : '';
 }
-},{"safe-buffer":34}],40:[function(require,module,exports){
+},{"safe-buffer":29}],35:[function(require,module,exports){
 var Buffer = require('buffer').Buffer
 
 module.exports = function (buf) {
@@ -7983,7 +7238,7 @@ module.exports = function (buf) {
 	}
 }
 
-},{"buffer":9}],41:[function(require,module,exports){
+},{"buffer":4}],36:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8717,7 +7972,7 @@ Url.prototype.parseHost = function() {
   if (host) this.hostname = host;
 };
 
-},{"./util":42,"punycode":21,"querystring":24}],42:[function(require,module,exports){
+},{"./util":37,"punycode":16,"querystring":19}],37:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -8735,7 +7990,7 @@ module.exports = {
   }
 };
 
-},{}],43:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 (function (global){
 
 /**
@@ -8806,7 +8061,7 @@ function config (name) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],44:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 module.exports = extend
 
 var hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -8827,4 +8082,740 @@ function extend() {
     return target
 }
 
-},{}]},{},[5]);
+},{}],40:[function(require,module,exports){
+(function (Buffer){
+var AlgoResponse, Algorithm, exports;
+
+Algorithm = (function() {
+  function Algorithm(client, path) {
+    this.client = client;
+    this.algo_path = path;
+    this.promise = {
+      then: (function(_this) {
+        return function(callback) {
+          return _this.callback = callback;
+        };
+      })(this)
+    };
+  }
+
+  Algorithm.prototype.pipe = function(input) {
+    var contentType, data;
+    data = input;
+    if (Buffer.isBuffer(input)) {
+      contentType = 'application/octet-stream';
+    } else if (typeof input === 'string') {
+      contentType = 'text/plain';
+    } else {
+      contentType = 'application/json';
+      data = JSON.stringify(input);
+    }
+    this.req = this.client.req('/v1/algo/' + this.algo_path, 'POST', data, {
+      'Content-Type': contentType
+    }, (function(_this) {
+      return function(response, status) {
+        return typeof _this.callback === "function" ? _this.callback(new AlgoResponse(response, status)) : void 0;
+      };
+    })(this));
+    return this.promise;
+  };
+
+  Algorithm.prototype.pipeJson = function(input) {
+    if (typeof input !== 'string') {
+      throw "Cannot convert " + (typeof input) + " to string";
+    }
+    this.req = this.client.req('/v1/algo/' + this.algo_path, 'POST', input, {
+      'Content-Type': 'application/json'
+    }, (function(_this) {
+      return function(response, status) {
+        return _this.callback(new AlgoResponse(response, status));
+      };
+    })(this));
+    return this.promise;
+  };
+
+  return Algorithm;
+
+})();
+
+AlgoResponse = (function() {
+  function AlgoResponse(response, status) {
+    this.status = status;
+    this.result = response.result;
+    this.error = response.error;
+    this.metadata = response.metadata;
+  }
+
+  AlgoResponse.prototype.get = function() {
+    if (this.error) {
+      throw "" + this.error.message;
+    }
+    switch (this.metadata.content_type) {
+      case "void":
+        return null;
+      case "text":
+      case "json":
+        return this.result;
+      case "binary":
+        return new Buffer(this.result, 'base64');
+      default:
+        throw "Unknown result content_type: " + this.metadata.content_type + ".";
+    }
+  };
+
+  return AlgoResponse;
+
+})();
+
+module.exports = exports = Algorithm;
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":4}],41:[function(require,module,exports){
+(function (process,Buffer){
+var Algorithm, AlgorithmiaClient, Data, algorithmia, defaultApiAddress, exports, http, https, packageJson, url;
+
+https = require('https');
+
+http = require('http');
+
+url = require('url');
+
+packageJson = require('../package.json');
+
+Algorithm = require('./algorithm.js');
+
+Data = require('./data.js');
+
+defaultApiAddress = 'https://api.algorithmia.com';
+
+AlgorithmiaClient = (function() {
+  function AlgorithmiaClient(key, address) {
+    this.apiAddress = address || process.env.ALGORITHMIA_API || defaultApiAddress;
+    key = key || process.env.ALGORITHMIA_API_KEY;
+    if (key) {
+      if (key.indexOf('Simple ') === 0) {
+        this.apiKey = key;
+      } else {
+        this.apiKey = 'Simple ' + key;
+      }
+    } else {
+      this.apiKey = '';
+    }
+  }
+
+  AlgorithmiaClient.prototype.algo = function(path) {
+    return new Algorithm(this, path);
+  };
+
+  AlgorithmiaClient.prototype.file = function(path) {
+    return new Data.File(this, path);
+  };
+
+  AlgorithmiaClient.prototype.dir = function(path) {
+    return new Data.Dir(this, path);
+  };
+
+  AlgorithmiaClient.prototype.req = function(path, method, data, cheaders, callback) {
+    var dheader, httpRequest, key, options, protocol, val;
+    dheader = {
+      'User-Agent': 'algorithmia-nodejs/' + packageJson.version + ' (NodeJS ' + process.version + ')'
+    };
+    if (this.apiKey) {
+      dheader['Authorization'] = this.apiKey;
+    }
+    for (key in cheaders) {
+      val = cheaders[key];
+      dheader[key] = val;
+    }
+    options = url.parse(this.apiAddress + path);
+    options.method = method;
+    options.headers = dheader;
+    protocol = options.protocol === 'https:' ? https : http;
+    httpRequest = protocol.request(options, function(res) {
+      var accept, chunks;
+      accept = dheader['Accept'];
+      if (accept === 'application/json' || accept === 'text/plain') {
+        res.setEncoding('utf8');
+      }
+      chunks = [];
+      res.on('data', function(chunk) {
+        return chunks.push(chunk);
+      });
+      res.on('end', function() {
+        var body, buff, ct;
+        ct = res.headers['content-type'];
+        if (typeof ct === 'string') {
+          if (ct.startsWith('application/json')) {
+            buff = chunks.join('');
+            body = buff === '' ? {} : JSON.parse(buff);
+          } else if (ct.startsWith('text/plain')) {
+            body = chunks.join('');
+          } else {
+            body = Buffer.concat(chunks);
+          }
+        }
+        if (callback) {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            if (!body) {
+              body = {};
+            }
+            if (!body.error) {
+              if (res.headers['x-error-message']) {
+                body.error = {
+                  message: res.headers['x-error-message']
+                };
+              } else {
+                body.error = {
+                  message: 'HTTP Response: ' + res.statusCode
+                };
+              }
+            }
+          }
+          callback(body, res.statusCode);
+        }
+      });
+      return res;
+    });
+    httpRequest.on('error', function(err) {
+      var body;
+      body = {
+        error: {
+          message: err.message
+        }
+      };
+      if (callback) {
+        callback(body, 500);
+      }
+    });
+    if (options.method !== 'HEAD') {
+      httpRequest.write(data);
+    }
+    httpRequest.end();
+  };
+
+  return AlgorithmiaClient;
+
+})();
+
+algorithmia = function(key, address) {
+  return new AlgorithmiaClient(key, address);
+};
+
+algorithmia.client = function(key, address) {
+  return new AlgorithmiaClient(key, address);
+};
+
+algorithmia.algo = function(path) {
+  this.defaultClient = this.defaultClient || new AlgorithmiaClient();
+  return this.defaultClient.algo(path);
+};
+
+algorithmia.file = function(path) {
+  this.defaultClient = this.defaultClient || new AlgorithmiaClient();
+  return this.defaultClient.file(path);
+};
+
+module.exports = exports = algorithmia;
+
+}).call(this,require('_process'),require("buffer").Buffer)
+},{"../package.json":43,"./algorithm.js":40,"./data.js":42,"_process":15,"buffer":4,"http":30,"https":8,"url":36}],42:[function(require,module,exports){
+var Data, Dir, DirListing, File, exports, fs, path,
+  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+  hasProp = {}.hasOwnProperty;
+
+path = require('path');
+
+fs = require('fs');
+
+Data = (function() {
+  function Data(client, path) {
+    this.client = client;
+    this.data_path = path.replace(/data\:\/\//, '');
+  }
+
+  Data.prototype.basename = function() {
+    return this.data_path.slice(this.data_path.lastIndexOf('/') + 1);
+  };
+
+  Data.prototype.parent = function() {
+    var offset;
+    offset = this.data_path.lastIndexOf('/');
+    if (offset >= 0) {
+      return new Dir(this.client, 'data://' + this.data_path.slice(0, offset));
+    } else {
+      return null;
+    }
+  };
+
+  return Data;
+
+})();
+
+File = (function(superClass) {
+  extend(File, superClass);
+
+  function File() {
+    return File.__super__.constructor.apply(this, arguments);
+  }
+
+  File.prototype.put = function(content, callback) {
+    var headers;
+    headers = {};
+    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
+  };
+
+  File.prototype.get = function(callback) {
+    var headers, innerCb;
+    headers = {
+      'Accept': 'application/octet-stream'
+    };
+    innerCb = function(response, status) {
+      var data, err;
+      err = (typeof response === 'object' && (response != null ? response.error : void 0)) ? response.error : null;
+      data = err === null ? response : null;
+      return callback(err, data);
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, innerCb);
+  };
+
+  File.prototype.putString = function(content, callback) {
+    var headers;
+    headers = {
+      'Content-Type': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
+  };
+
+  File.prototype.putJson = function(content, callback) {
+    var headers;
+    headers = {
+      'Content-Type': 'application/json'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
+  };
+
+  File.prototype.getString = function(callback) {
+    var headers;
+    headers = {
+      'Accept': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, callback);
+  };
+
+  File.prototype.getJson = function(callback) {
+    var headers;
+    headers = {
+      'Accept': 'application/json'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, callback);
+  };
+
+  File.prototype.exists = function(callback) {
+    var headers;
+    headers = {
+      'Accept': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'HEAD', '', headers, function(response, status) {
+      if (status === 200) {
+        return callback(true);
+      } else {
+        return callback(false, status, response);
+      }
+    });
+  };
+
+  File.prototype["delete"] = function(callback) {
+    var headers;
+    headers = {
+      'Content-Type': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'DELETE', '', headers, callback);
+  };
+
+  return File;
+
+})(Data);
+
+Dir = (function(superClass) {
+  extend(Dir, superClass);
+
+  function Dir() {
+    return Dir.__super__.constructor.apply(this, arguments);
+  }
+
+  Dir.prototype.create = function(callback) {
+    var content, headers;
+    content = {
+      name: this.basename()
+    };
+    headers = {
+      'Content-Type': 'application/json'
+    };
+    return this.client.req('/v1/data/' + this.parent().data_path, 'POST', JSON.stringify(content), headers, callback);
+  };
+
+  Dir.prototype.file = function(filename) {
+    return new File(this.client, 'data://' + this.data_path + '/' + filename);
+  };
+
+  Dir.prototype.putFile = function(filePath, callback) {
+    var filename;
+    filename = path.basename(filePath);
+    return fs.readFile(filePath, (function(_this) {
+      return function(err, data) {
+        return _this.file(filename).put(data, callback);
+      };
+    })(this));
+  };
+
+  Dir.prototype.iterator = function() {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.iterator();
+  };
+
+  Dir.prototype.forEach = function(callback) {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.forEach(callback);
+  };
+
+  Dir.prototype.forEachFile = function(callback) {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.forEach(function(err, item) {
+      if (item instanceof File) {
+        return callback(err, item);
+      }
+    });
+  };
+
+  Dir.prototype.forEachDir = function(callback) {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.forEach(function(err, item) {
+      if (item instanceof Dir) {
+        return callback(err, item);
+      }
+    });
+  };
+
+  Dir.prototype.exists = function(callback) {
+    var headers;
+    headers = {};
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, function(response, status) {
+      if (status === 200) {
+        return callback(true);
+      } else {
+        return callback(false, status, response);
+      }
+    });
+  };
+
+  Dir.prototype["delete"] = function(force, callback) {
+    var headers, query;
+    query = force ? '?force=true' : '';
+    headers = {
+      'Content-Type': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path + query, 'DELETE', '', headers, callback);
+  };
+
+  return Dir;
+
+})(Data);
+
+DirListing = (function() {
+  function DirListing(client, path) {
+    this.client = client;
+    this.data_path = path;
+    this.offset = 0;
+    this.error = null;
+    this.page = null;
+  }
+
+  DirListing.prototype.loadNextPage = function(cb) {
+    var headers, query;
+    headers = {};
+    query = this.page === null ? '' : "?marker=" + (encodeURIComponent(this.page.marker));
+    return this.client.req('/v1/data/' + this.data_path + query, 'GET', '', headers, (function(_this) {
+      return function(response, status) {
+        _this.offset = 0;
+        if (status === 200) {
+          _this.page = response;
+          _this.error = null;
+        } else {
+          _this.page = null;
+          _this.error = response.error;
+        }
+        if (cb) {
+          return cb();
+        }
+      };
+    })(this));
+  };
+
+  DirListing.prototype.forEach = function(cb) {
+    var iter, recurse, thenCb;
+    thenCb = null;
+    iter = this.iterator();
+    recurse = function(err, value) {
+      if (value === void 0) {
+        if (thenCb) {
+          return thenCb();
+        }
+      } else {
+        cb(err, value);
+        return iter.next(recurse);
+      }
+    };
+    iter.next(recurse);
+    return {
+      then: (function(_this) {
+        return function(cb) {
+          return thenCb = cb;
+        };
+      })(this)
+    };
+  };
+
+  DirListing.prototype.iterator = function() {
+    return {
+      next: (function(_this) {
+        return function(cb) {
+          var dir, dirCount, file, fileCount, nextResult, ref, ref1;
+          if (_this.error) {
+            cb(_this.error, void 0);
+          } else if (_this.page === null) {
+            _this.loadNextPage(function() {
+              return _this.iterator().next(cb);
+            });
+          } else {
+            dirCount = ((ref = _this.page.folders) != null ? ref.length : void 0) || 0;
+            fileCount = ((ref1 = _this.page.files) != null ? ref1.length : void 0) || 0;
+            if (_this.offset < dirCount) {
+              dir = _this.page.folders[_this.offset];
+              _this.offset++;
+              cb(null, new Dir(_this.client, 'data://' + _this.data_path + '/' + dir.name));
+            } else if (_this.offset < dirCount + fileCount) {
+              file = _this.page.files[_this.offset];
+              _this.offset++;
+              nextResult = new File(_this.client, 'data://' + _this.data_path + '/' + file.filename);
+              nextResult.last_modified = file.last_modified;
+              nextResult.size = file.size;
+              cb(null, nextResult);
+            } else if (_this.page.marker) {
+              _this.loadNextPage(function() {
+                return _this.iterator().next(cb);
+              });
+            } else {
+              cb(null, void 0);
+            }
+          }
+        };
+      })(this)
+    };
+  };
+
+  return DirListing;
+
+})();
+
+module.exports = exports = {
+  File: File,
+  Dir: Dir
+};
+
+},{"fs":1,"path":13}],43:[function(require,module,exports){
+module.exports={
+  "_from": "algorithmia",
+  "_id": "algorithmia@0.3.10",
+  "_inBundle": false,
+  "_integrity": "sha1-9xwgqf9WRmCk0c9zlHmV123jRQw=",
+  "_location": "/algorithmia",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "tag",
+    "registry": true,
+    "raw": "algorithmia",
+    "name": "algorithmia",
+    "escapedName": "algorithmia",
+    "rawSpec": "",
+    "saveSpec": null,
+    "fetchSpec": "latest"
+  },
+  "_requiredBy": [
+    "#USER"],
+  "_args": [
+    [
+      "algorithmia",
+      "/media/vinit/Data/Phishing-detection-using-data-mining/Extension"
+    ]
+  ],
+  "_from": "algorithmia@latest",
+  "_id": "algorithmia@0.3.10",
+  "_inCache": true,
+  "_installable": true,
+  "_location": "/algorithmia",
+  "_nodeVersion": "6.5.0",
+  "_npmOperationalInternal": {
+    "host": "s3://npm-registry-packages",
+    "tmp": "tmp/algorithmia-0.3.10.tgz_1499405400085_0.7770562872756273"
+  },
+  "_npmUser": {
+    "email": "anowell@gmail.com",
+    "name": "anowell"
+  },
+  "_npmVersion": "3.10.3",
+  "_phantomChildren": {},
+  "_requested": {
+    "name": "algorithmia",
+    "raw": "algorithmia",
+    "rawSpec": "",
+    "scope": null,
+    "spec": "latest",
+    "type": "tag"
+  },
+  "_requiredBy": [
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/algorithmia/-/algorithmia-0.3.10.tgz",
+  "_shasum": "f71c20a9ff564660a4d1cf73947995d76de3450c",
+  "_spec": "algorithmia",
+  "_where": "C:\\Users\\PROJECT\\Desktop\\Phishing-detection-using-data-mining\\Extension",
+  "bugs": {
+    "url": "https://github.com/algorithmiaio/algorithmia-nodejs/issues"
+  },
+  "bundleDependencies": false,
+  "dependencies": {},
+  "deprecated": false,
+  "_shrinkwrap": null,
+  "_spec": "algorithmia",
+  "_where": "/media/vinit/Data/Phishing-detection-using-data-mining/Extension",
+  "bugs": {
+    "url": "https://github.com/algorithmiaio/algorithmia-nodejs/issues"
+  },
+  "dependencies": {},
+  "description": "Client library for calling algorithms in the Algorithmia marketplace",
+  "devDependencies": {
+    "gulp": "3.9.*",
+    "gulp-coffee": "2.3.*"
+  },
+  "homepage": "https://github.com/algorithmiaio/algorithmia-nodejs#readme",
+  "keywords": [
+    "algorithm",
+    "cloud",
+    "api"
+  ],
+  "license": "MIT",
+  "main": "./lib/algorithmia.js",
+  "name": "algorithmia",
+  "directories": {},
+  "dist": {
+    "shasum": "f71c20a9ff564660a4d1cf73947995d76de3450c",
+    "tarball": "https://registry.npmjs.org/algorithmia/-/algorithmia-0.3.10.tgz"
+  },
+  "gitHead": "169170e9529daa017e15bd7076d4c1143c5f66bf",
+  "homepage": "https://github.com/algorithmiaio/algorithmia-nodejs#readme",
+  "keywords": [
+    "algorithm",
+    "api",
+    "cloud"
+  ],
+  "license": "MIT",
+  "main": "./lib/algorithmia.js",
+  "maintainers": [
+    {
+      "name": "anowell",
+      "email": "anowell@gmail.com"
+    },
+    {
+      "name": "jamesatha",
+      "email": "jamesa@algorithmia.io"
+    },
+    {
+      "name": "pmcquighan",
+      "email": "pmcquighan@gmail.com"
+    }
+  ],
+  "name": "algorithmia",
+  "optionalDependencies": {},
+  "readme": "ERROR: No README data found!",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/algorithmiaio/algorithmia-nodejs.git"
+  },
+  "scripts": {},
+  "url": "http://github.com/algorithmiaio/algorithmia-nodejs",
+  "version": "0.3.10"
+}
+
+},{}],44:[function(require,module,exports){
+var Algorithmia = require('algorithmia');
+var input = `@relation phishing
+
+@attribute having_IP_Address {-1,1}
+@attribute URL_Length {1,0,-1}
+@attribute Shortining_Service {1,-1}
+@attribute having_At_Symbol {1,-1}
+@attribute double_slash_redirecting {-1,1}
+@attribute Prefix_Suffix {-1,1}
+@attribute having_Sub_Domain {-1,0,1}
+@attribute SSLfinal_State {-1,1,0}
+@attribute Domain_registeration_length {-1,1}
+@attribute Favicon {1,-1}
+@attribute port {1,-1}
+@attribute HTTPS_token {-1,1}
+@attribute Request_URL {1,-1}
+@attribute URL_of_Anchor {-1,0,1}
+@attribute Links_in_tags {1,-1,0}
+@attribute SFH {-1,1,0}
+@attribute Submitting_to_email {-1,1}
+@attribute Abnormal_URL {-1,1}
+@attribute Redirect {0,1}
+@attribute on_mouseover {1,-1}
+@attribute RightClick {1,-1}
+@attribute popUpWidnow {1,-1}
+@attribute Iframe {1,-1}
+@attribute age_of_domain {-1,1}
+@attribute DNSRecord {-1,1}
+@attribute web_traffic {-1,0,1}
+@attribute Page_Rank {-1,1}
+@attribute Google_Index {1,-1}
+@attribute Statistical_report {-1,1}
+@attribute Result {-1,1}
+
+@data
+1,1,1,1,1,1,1,1,1,1,1,1,-1,-1,0,-1,1,1,0,1,1,1,1,-1,1,1,1,1,1,-1    
+`;
+Algorithmia.client("***REMOVED***")
+.algo("vneogi199/WriteArff/0.1.7")
+.pipe(input)
+.then(function(output) {
+    console.log(output.result);
+	var input1 = {
+		"trainUrl":"data://vneogi199/training/Algorithmia-phishing.arff",
+		// "testUrl":"data://.algo/vneogi199/WriteArff/temp/"+output.result.split('/')[output.result.split('/').length-1],
+		"testUrl":output.result,
+		"mode":"load",
+		"modelUrl":"data://.algo/weka/WekaClassification/perm/model.txt"
+	};
+	console.log(input1);
+	Algorithmia.client("***REMOVED***")
+	    .algo("weka/RandomForest/0.1.1")
+	    .pipe(input1)
+	    .then(function(output) {
+	        console.log(output);
+    });
+});
+// var div = document.createElement("div");
+// div.setAttribute("id", "se-pre-con");
+// document.body.appendChild(div);
+// document.getElementById("se-pre-con").innerHTML = "<br><br><br><br><h1>Warning!!</h1><br><img src='http://pluspng.com/img-png/png-wrong-cross-clear-cross-empty-incorrect-red-wrong-icon-512.png'></img><br><p>This Page is suspected as Phishing Site.</p>";
+// var div2 = document.createElement("div");
+// div2.setAttribute("id", "del");
+// document.getElementById('se-pre-con').appendChild(div2);
+// document.getElementById("del").innerHTML = "<a>Click Here to Close the Message.</a>"
+// div2.onclick = function() {this.parentNode.removeChild(this);document.getElementById('se-pre-con').remove();
+// }
+},{"algorithmia":41}]},{},[44]);
