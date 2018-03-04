@@ -9,7 +9,7 @@
   },
   "content_scripts": [{
     "css": ["styles.css"],
-    "js": ["upload1.js"],
+    "js": ["rough.js"],
     "matches": ["<all_urls>"]
   },
   {

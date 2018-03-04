@@ -1,3 +1,44 @@
+var input = `@relation phishing
+
+@attribute having_IP_Address {-1,1}
+@attribute URL_Length {1,0,-1}
+@attribute Shortining_Service {1,-1}
+@attribute having_At_Symbol {1,-1}
+@attribute double_slash_redirecting {-1,1}
+@attribute Prefix_Suffix {-1,1}
+@attribute having_Sub_Domain {-1,0,1}
+@attribute SSLfinal_State {-1,1,0}
+@attribute Domain_registeration_length {-1,1}
+@attribute Favicon {1,-1}
+@attribute port {1,-1}
+@attribute HTTPS_token {-1,1}
+@attribute Request_URL {1,-1}
+@attribute URL_of_Anchor {-1,0,1}
+@attribute Links_in_tags {1,-1,0}
+@attribute SFH {-1,1,0}
+@attribute Submitting_to_email {-1,1}
+@attribute Abnormal_URL {-1,1}
+@attribute Redirect {0,1}
+@attribute on_mouseover {1,-1}
+@attribute RightClick {1,-1}
+@attribute popUpWidnow {1,-1}
+@attribute Iframe {1,-1}
+@attribute age_of_domain {-1,1}
+@attribute DNSRecord {-1,1}
+@attribute web_traffic {-1,0,1}
+@attribute Page_Rank {-1,1}
+@attribute Google_Index {1,-1}
+@attribute Statistical_report {-1,1}
+@attribute Result {-1,1}
+
+@data
+IP1,Length2,1,1,1,1,1,1,1,1,1,1,-1,-1,0,-1,1,1,0,1,1,1,1,-1,1,1,1,1,1,-1    
+`;
+
+//1 having_IP_Address
+input=window.location.hostname.match(/[a-z]/i)?input.replace("IP1","-1"):input.replace("IP1",1);
+//2 URL_Length
+URL_Length=location.hostname.length>75?input.replace("Length2","1"):location.hostname.length>=54?input.replace("Length2","0"):input.replace("Length2","-1");
 function isShortUrl(url){
     var query = url.split('?');
     var fragment = url.split('/');
@@ -170,13 +211,6 @@ function gettagurls()
 	return p/c<0.17?-1:p/c<0.81?0:1;	
 }
 
-//1 
-having_IP_Address=window.location.hostname.match(/[a-z]/i)?-1:1;
-console.log(having_IP_Address);
-//2
-URL_Length=location.hostname.length>75?1:location.hostname.length>=54?0:-1;
-
-console.log(URL_Length);
 //3
 Shortining_Service=isShortUrl(window.location.href)?1:-1;
 console.log(Shortining_Service);
