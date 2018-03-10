@@ -33,7 +33,7 @@ var input = `@relation phishing
 
 @data
 IP1,Length2,Short3,At4,DSlash5,PreSuf6,SbDom7,8,9,Fav10,11,HTTPSToken12,Req13,
-Anchor14,Links15,16,Mail17,18,19,Status20,RClick21,Popup22,Iframe23,24,25,26,27,28,Stat29,-1    
+Anchor14,Links15,SFH16,Mail17,18,19,Status20,RClick21,Popup22,Iframe23,24,25,26,27,28,Stat29,-1    
 `;
 
 //1 having_IP_Address
