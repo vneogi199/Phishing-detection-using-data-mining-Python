@@ -172,7 +172,7 @@ function getrequesturl()
 		if (Audio_URL[i].indexOf("http") >=0 || Audio_URL[i].indexOf("https") >=0 ) 
 			p=p+1;
 	} 
-	return p/c<0.22?"-1":p/c<0.61?"0":"1";
+	return p/c<0.42?-1:1;
 }
 input=input.replace("Req13",getrequesturl());
 
@@ -201,7 +201,7 @@ function getanchorurl()
 			p=p+1;
 		else
 		{	
-			if (Anchor_URL[i].indexOf("http") >=0 || Anchor_URL[i].indexOf("https") >=0)
+			if (Anchor_URL[a].indexOf("http") >=0 || Anchor_URL[a].indexOf("https") >=0)
 				p=p+1;
 		}
 	}
@@ -239,7 +239,7 @@ function gettagurls()
     		last = Meta_URL[a].indexOf("http",last);    		
     		if(last != -1){
         		p=p+1;
-        		last += "http".length();
+        		last += "http".length;
     		}
     	}
 	}
@@ -257,10 +257,10 @@ function findHttp()
      {
           Code[i] = nodeList[i].getAttribute("action");
      }
-    if(Code){
+    if(Code.length != 0){
     	for (a in Code)
 		{ 	
-			if (Code[a]=="" || Code[a]=="about:blank")
+			if (Code[a]==null || Code[a]=="" || Code[a]=="about:blank")
 				return "1";
 			else if(Code[a].indexOf("http") >=0 || Code[a].indexOf("https") >=0)
 				return "0"; 

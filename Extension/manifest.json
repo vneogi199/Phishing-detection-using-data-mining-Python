@@ -11,11 +11,6 @@
     "css": ["styles.css"],
     "js": ["rough.js"],
     "matches": ["<all_urls>"]
-  },
-  {
-    "css": ["styles1.css"],
-    "js": ["content1.js"],
-    "matches": ["https://accounts.google.com/*"]
   }
 ]
  
