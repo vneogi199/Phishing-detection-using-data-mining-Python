@@ -32,7 +32,7 @@ var input = `@relation phishing
 @attribute Result {-1,1}
 
 @data
-IP1,Length2,Short3,At4,DSlash5,PreSuf6,SbDom7,8,9,Fav10,11,HTTPSToken12,Req13,
+IP1,Length2,Short3,At4,DSlash5,PreSuf6,SbDom7,Ssl8,9,Fav10,11,HTTPSToken12,Req13,
 Anchor14,Links15,16,Mail17,18,19,Status20,RClick21,Popup22,Iframe23,24,25,26,27,28,Stat29,-1    
 `;
 
@@ -108,7 +108,8 @@ function getDomain(url,value){
 
 input=input.replace("SbDom7",getDomain(window.location.hostname,1));
 
-
+//8 SSLfinal_State
+input=input.replace("Ssl8",document.location.protocol=="https:"?-1:1);
 
 //10 favicon
 function getFavicon()
