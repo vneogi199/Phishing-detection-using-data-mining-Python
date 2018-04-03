@@ -1,40 +1,46 @@
-var input = `@relation phishing
-
-@attribute having_IP_Address {-1,1}
-@attribute URL_Length {1,0,-1}
-@attribute Shortining_Service {1,-1}
-@attribute having_At_Symbol {1,-1}
-@attribute double_slash_redirecting {-1,1}
-@attribute Prefix_Suffix {-1,1}
-@attribute having_Sub_Domain {-1,0,1}
-@attribute SSLfinal_State {-1,1,0}
-@attribute Domain_registeration_length {-1,1}
-@attribute Favicon {1,-1}
-@attribute port {1,-1}
-@attribute HTTPS_token {-1,1}
-@attribute Request_URL {1,-1}
-@attribute URL_of_Anchor {-1,0,1}
-@attribute Links_in_tags {1,-1,0}
-@attribute SFH {-1,1,0}
-@attribute Submitting_to_email {-1,1}
-@attribute Abnormal_URL {-1,1}
-@attribute Redirect {0,1}
-@attribute on_mouseover {1,-1}
-@attribute RightClick {1,-1}
-@attribute popUpWidnow {1,-1}
-@attribute Iframe {1,-1}
-@attribute age_of_domain {-1,1}
-@attribute DNSRecord {-1,1}
-@attribute web_traffic {-1,0,1}
-@attribute Page_Rank {-1,1}
-@attribute Google_Index {1,-1}
-@attribute Statistical_report {-1,1}
-@attribute Result {-1,1}
-
-@data
-IP1,Length2,Short3,At4,DSlash5,PreSuf6,SbDom7,8,9,Fav10,11,HTTPSToken12,Req13,
-Anchor14,Links15,SFH16,Mail17,18,19,Status20,RClick21,Popup22,Iframe23,24,25,26,27,28,Stat29,-1    
+var input = `having_IP_Address;URL_Length;Shortining_Service;having_At_Symbol;double_slash_redirecting;Prefix_Suffix;having_Sub_Domain;SSLfinal_State;Domain_registeration_length;Favicon;HTTPS_token;Request_URL;URL_of_Anchor;Links_in_tags;SFH;Submitting_to_email;Abnormal_URL;on_mouseover;RightClick;popUpWidnow;Iframe;age_of_domain;DNSRecord;web_traffic;Google_Index;Statistical_report;Result
+IP1;Length2;Short3;At4;DSlash5;PreSuf6;SbDom7;SSL8;DomLen9;Fav10;HTTPSToken12;Req13;Anchor14;Links15;SFH16;Mail17;Abnormal18;Status20;RClick21;Popup22;Iframe23;AgeDom24;DNS25;Alexa26;GoogleIndex28;Stat29;-1    
 `;
+
+var Algorithmia=require('algorithmia');
+
+function sendData(input, hostname, href){
+    Algorithmia.client("***REMOVED***")
+    .algo("vneogi199/whoisPython/1.0.3")
+    .pipe(href)
+    .then(function(output) {
+    	input=input.replace("DNS25",output.result[0]);
+    	input=input.replace("Abnormal18",output.result[1]);
+    	input=input.replace("DomLen9",output.result[2]);
+    	input=input.replace("AgeDom24",output.result[3]);
+    	Algorithmia.client("***REMOVED***")
+    	.algo("vneogi199/FetchURLFeatures/1.0.2")
+    	.pipe(hostname)
+    	.then(function(output){
+    		input=input.replace("GoogleIndex28",output.result[0]);
+    		input=input.replace("SSL8",output.result[1]);
+    		console.log(input);
+    		Algorithmia.client("***REMOVED***")
+	    	.algo("vneogi199/ScikitRandomForest/2.0.0")
+	    	.pipe(input)
+	    	.then(function(output){
+	    		console.log(output.result[0]);
+	    		if(output.result[0]==1){
+					var div=document.createElement("div");
+					div.setAttribute("id", "se-pre-con");
+					document.body.appendChild(div);
+					document.getElementById("se-pre-con").innerHTML = "<br><br><br><br><h1>Warning!!</h1><br><img src='http://pluspng.com/img-png/png-wrong-cross-clear-cross-empty-incorrect-red-wrong-icon-512.png' style='height: 256px; width: 256px;'></img><br><p>This Page is suspected as Phishing Site.</p>";
+					var div2 = document.createElement("div");
+					div2.setAttribute("id", "del");
+					document.getElementById('se-pre-con').appendChild(div2);
+					document.getElementById("del").innerHTML = "<a>Click Here to Close the Message.</a>"
+					div2.onclick = function() {this.parentNode.removeChild(this);document.getElementById('se-pre-con').remove();
+					}
+	    		}
+	    	});
+    	});
+    });
+}
 
 //1 having_IP_Address
 input=window.location.hostname.match(/[a-z]/i)?input.replace("IP1","-1"):input.replace("IP1",1);
@@ -316,8 +322,23 @@ input=input.replace("Iframe23",findWord("iframe"));
 input=input.replace("Stat29",getDomain(window.location.hostname,2));
 
 
+//26 web_traffic
+var alexa = require('alexarank');
+alexa(location.hostname, function(error, result) {
+    if (!error) {
+        if(!result.rank){
+            input=input.replace("Alexa26",1);
+        }
+        else if(parseInt(result.rank)<100000)
+            input=input.replace("Alexa26",-1);
+        else input=input.replace("Alexa26",0);
+    } else {
+        input=input.replace("Alexa26",0);
+    }
+    sendData(input,location.hostname,location.href);
+});
 
-console.log(input);
+
 
 
 

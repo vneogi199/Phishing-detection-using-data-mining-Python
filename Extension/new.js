@@ -1,19 +1,9 @@
 (function(){function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s}return e})()({1:[function(require,module,exports){
-var alexa = require('alexarank');
-
-alexa(location.hostname, function(error, result) {
-    if (!error) {
-        console.log(result);
-    } else {
-        console.log(error);
-    }
-});
-},{"alexarank":2}],2:[function(require,module,exports){
 'use strict';
 
 module.exports = require('./lib/alexarank');
 
-},{"./lib/alexarank":3}],3:[function(require,module,exports){
+},{"./lib/alexarank":2}],2:[function(require,module,exports){
 'use strict';
 
 /*****************************************************************************/
@@ -66,7 +56,675 @@ module.exports = function(url, callback) {
 	});
 };
 
-},{"es6-promise":4,"isomorphic-fetch":5,"xml2js":13}],4:[function(require,module,exports){
+},{"es6-promise":7,"isomorphic-fetch":8,"xml2js":16}],3:[function(require,module,exports){
+(function (Buffer){
+var AlgoResponse, Algorithm, exports;
+
+Algorithm = (function() {
+  function Algorithm(client, path) {
+    this.client = client;
+    this.algo_path = path;
+    this.promise = {
+      then: (function(_this) {
+        return function(callback) {
+          return _this.callback = callback;
+        };
+      })(this)
+    };
+  }
+
+  Algorithm.prototype.pipe = function(input) {
+    var contentType, data;
+    data = input;
+    if (Buffer.isBuffer(input)) {
+      contentType = 'application/octet-stream';
+    } else if (typeof input === 'string') {
+      contentType = 'text/plain';
+    } else {
+      contentType = 'application/json';
+      data = JSON.stringify(input);
+    }
+    this.req = this.client.req('/v1/algo/' + this.algo_path, 'POST', data, {
+      'Content-Type': contentType
+    }, (function(_this) {
+      return function(response, status) {
+        return typeof _this.callback === "function" ? _this.callback(new AlgoResponse(response, status)) : void 0;
+      };
+    })(this));
+    return this.promise;
+  };
+
+  Algorithm.prototype.pipeJson = function(input) {
+    if (typeof input !== 'string') {
+      throw "Cannot convert " + (typeof input) + " to string";
+    }
+    this.req = this.client.req('/v1/algo/' + this.algo_path, 'POST', input, {
+      'Content-Type': 'application/json'
+    }, (function(_this) {
+      return function(response, status) {
+        return _this.callback(new AlgoResponse(response, status));
+      };
+    })(this));
+    return this.promise;
+  };
+
+  return Algorithm;
+
+})();
+
+AlgoResponse = (function() {
+  function AlgoResponse(response, status) {
+    this.status = status;
+    this.result = response.result;
+    this.error = response.error;
+    this.metadata = response.metadata;
+  }
+
+  AlgoResponse.prototype.get = function() {
+    if (this.error) {
+      throw "" + this.error.message;
+    }
+    switch (this.metadata.content_type) {
+      case "void":
+        return null;
+      case "text":
+      case "json":
+        return this.result;
+      case "binary":
+        return new Buffer(this.result, 'base64');
+      default:
+        throw "Unknown result content_type: " + this.metadata.content_type + ".";
+    }
+  };
+
+  return AlgoResponse;
+
+})();
+
+module.exports = exports = Algorithm;
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":43}],4:[function(require,module,exports){
+(function (process,Buffer){
+var Algorithm, AlgorithmiaClient, Data, algorithmia, defaultApiAddress, exports, http, https, packageJson, url;
+
+https = require('https');
+
+http = require('http');
+
+url = require('url');
+
+packageJson = require('../package.json');
+
+Algorithm = require('./algorithm.js');
+
+Data = require('./data.js');
+
+defaultApiAddress = 'https://api.algorithmia.com';
+
+AlgorithmiaClient = (function() {
+  function AlgorithmiaClient(key, address) {
+    this.apiAddress = address || process.env.ALGORITHMIA_API || defaultApiAddress;
+    key = key || process.env.ALGORITHMIA_API_KEY;
+    if (key) {
+      if (key.indexOf('Simple ') === 0) {
+        this.apiKey = key;
+      } else {
+        this.apiKey = 'Simple ' + key;
+      }
+    } else {
+      this.apiKey = '';
+    }
+  }
+
+  AlgorithmiaClient.prototype.algo = function(path) {
+    return new Algorithm(this, path);
+  };
+
+  AlgorithmiaClient.prototype.file = function(path) {
+    return new Data.File(this, path);
+  };
+
+  AlgorithmiaClient.prototype.dir = function(path) {
+    return new Data.Dir(this, path);
+  };
+
+  AlgorithmiaClient.prototype.req = function(path, method, data, cheaders, callback) {
+    var dheader, httpRequest, key, options, protocol, val;
+    dheader = {
+      'User-Agent': 'algorithmia-nodejs/' + packageJson.version + ' (NodeJS ' + process.version + ')'
+    };
+    if (this.apiKey) {
+      dheader['Authorization'] = this.apiKey;
+    }
+    for (key in cheaders) {
+      val = cheaders[key];
+      dheader[key] = val;
+    }
+    options = url.parse(this.apiAddress + path);
+    options.method = method;
+    options.headers = dheader;
+    protocol = options.protocol === 'https:' ? https : http;
+    httpRequest = protocol.request(options, function(res) {
+      var accept, chunks;
+      accept = dheader['Accept'];
+      if (accept === 'application/json' || accept === 'text/plain') {
+        res.setEncoding('utf8');
+      }
+      chunks = [];
+      res.on('data', function(chunk) {
+        return chunks.push(chunk);
+      });
+      res.on('end', function() {
+        var body, buff, ct;
+        ct = res.headers['content-type'];
+        if (typeof ct === 'string') {
+          if (ct.startsWith('application/json')) {
+            buff = chunks.join('');
+            body = buff === '' ? {} : JSON.parse(buff);
+          } else if (ct.startsWith('text/plain')) {
+            body = chunks.join('');
+          } else {
+            body = Buffer.concat(chunks);
+          }
+        }
+        if (callback) {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            if (!body) {
+              body = {};
+            }
+            if (!body.error) {
+              if (res.headers['x-error-message']) {
+                body.error = {
+                  message: res.headers['x-error-message']
+                };
+              } else {
+                body.error = {
+                  message: 'HTTP Response: ' + res.statusCode
+                };
+              }
+            }
+          }
+          callback(body, res.statusCode);
+        }
+      });
+      return res;
+    });
+    httpRequest.on('error', function(err) {
+      var body;
+      body = {
+        error: {
+          message: err.message
+        }
+      };
+      if (callback) {
+        callback(body, 500);
+      }
+    });
+    if (options.method !== 'HEAD') {
+      httpRequest.write(data);
+    }
+    httpRequest.end();
+  };
+
+  return AlgorithmiaClient;
+
+})();
+
+algorithmia = function(key, address) {
+  return new AlgorithmiaClient(key, address);
+};
+
+algorithmia.client = function(key, address) {
+  return new AlgorithmiaClient(key, address);
+};
+
+algorithmia.algo = function(path) {
+  this.defaultClient = this.defaultClient || new AlgorithmiaClient();
+  return this.defaultClient.algo(path);
+};
+
+algorithmia.file = function(path) {
+  this.defaultClient = this.defaultClient || new AlgorithmiaClient();
+  return this.defaultClient.file(path);
+};
+
+module.exports = exports = algorithmia;
+
+}).call(this,require('_process'),require("buffer").Buffer)
+},{"../package.json":6,"./algorithm.js":3,"./data.js":5,"_process":54,"buffer":43,"http":74,"https":47,"url":81}],5:[function(require,module,exports){
+var Data, Dir, DirListing, File, exports, fs, path,
+  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+  hasProp = {}.hasOwnProperty;
+
+path = require('path');
+
+fs = require('fs');
+
+Data = (function() {
+  function Data(client, path) {
+    this.client = client;
+    this.data_path = path.replace(/data\:\/\//, '');
+  }
+
+  Data.prototype.basename = function() {
+    return this.data_path.slice(this.data_path.lastIndexOf('/') + 1);
+  };
+
+  Data.prototype.parent = function() {
+    var offset;
+    offset = this.data_path.lastIndexOf('/');
+    if (offset >= 0) {
+      return new Dir(this.client, 'data://' + this.data_path.slice(0, offset));
+    } else {
+      return null;
+    }
+  };
+
+  return Data;
+
+})();
+
+File = (function(superClass) {
+  extend(File, superClass);
+
+  function File() {
+    return File.__super__.constructor.apply(this, arguments);
+  }
+
+  File.prototype.put = function(content, callback) {
+    var headers;
+    headers = {};
+    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
+  };
+
+  File.prototype.get = function(callback) {
+    var headers, innerCb;
+    headers = {
+      'Accept': 'application/octet-stream'
+    };
+    innerCb = function(response, status) {
+      var data, err;
+      err = (typeof response === 'object' && (response != null ? response.error : void 0)) ? response.error : null;
+      data = err === null ? response : null;
+      return callback(err, data);
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, innerCb);
+  };
+
+  File.prototype.putString = function(content, callback) {
+    var headers;
+    headers = {
+      'Content-Type': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
+  };
+
+  File.prototype.putJson = function(content, callback) {
+    var headers;
+    headers = {
+      'Content-Type': 'application/json'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'PUT', content, headers, callback);
+  };
+
+  File.prototype.getString = function(callback) {
+    var headers;
+    headers = {
+      'Accept': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, callback);
+  };
+
+  File.prototype.getJson = function(callback) {
+    var headers;
+    headers = {
+      'Accept': 'application/json'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, callback);
+  };
+
+  File.prototype.exists = function(callback) {
+    var headers;
+    headers = {
+      'Accept': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'HEAD', '', headers, function(response, status) {
+      if (status === 200) {
+        return callback(true);
+      } else {
+        return callback(false, status, response);
+      }
+    });
+  };
+
+  File.prototype["delete"] = function(callback) {
+    var headers;
+    headers = {
+      'Content-Type': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path, 'DELETE', '', headers, callback);
+  };
+
+  return File;
+
+})(Data);
+
+Dir = (function(superClass) {
+  extend(Dir, superClass);
+
+  function Dir() {
+    return Dir.__super__.constructor.apply(this, arguments);
+  }
+
+  Dir.prototype.create = function(callback) {
+    var content, headers;
+    content = {
+      name: this.basename()
+    };
+    headers = {
+      'Content-Type': 'application/json'
+    };
+    return this.client.req('/v1/data/' + this.parent().data_path, 'POST', JSON.stringify(content), headers, callback);
+  };
+
+  Dir.prototype.file = function(filename) {
+    return new File(this.client, 'data://' + this.data_path + '/' + filename);
+  };
+
+  Dir.prototype.putFile = function(filePath, callback) {
+    var filename;
+    filename = path.basename(filePath);
+    return fs.readFile(filePath, (function(_this) {
+      return function(err, data) {
+        return _this.file(filename).put(data, callback);
+      };
+    })(this));
+  };
+
+  Dir.prototype.iterator = function() {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.iterator();
+  };
+
+  Dir.prototype.forEach = function(callback) {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.forEach(callback);
+  };
+
+  Dir.prototype.forEachFile = function(callback) {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.forEach(function(err, item) {
+      if (item instanceof File) {
+        return callback(err, item);
+      }
+    });
+  };
+
+  Dir.prototype.forEachDir = function(callback) {
+    var listing;
+    listing = new DirListing(this.client, this.data_path);
+    return listing.forEach(function(err, item) {
+      if (item instanceof Dir) {
+        return callback(err, item);
+      }
+    });
+  };
+
+  Dir.prototype.exists = function(callback) {
+    var headers;
+    headers = {};
+    return this.client.req('/v1/data/' + this.data_path, 'GET', '', headers, function(response, status) {
+      if (status === 200) {
+        return callback(true);
+      } else {
+        return callback(false, status, response);
+      }
+    });
+  };
+
+  Dir.prototype["delete"] = function(force, callback) {
+    var headers, query;
+    query = force ? '?force=true' : '';
+    headers = {
+      'Content-Type': 'text/plain'
+    };
+    return this.client.req('/v1/data/' + this.data_path + query, 'DELETE', '', headers, callback);
+  };
+
+  return Dir;
+
+})(Data);
+
+DirListing = (function() {
+  function DirListing(client, path) {
+    this.client = client;
+    this.data_path = path;
+    this.offset = 0;
+    this.error = null;
+    this.page = null;
+  }
+
+  DirListing.prototype.loadNextPage = function(cb) {
+    var headers, query;
+    headers = {};
+    query = this.page === null ? '' : "?marker=" + (encodeURIComponent(this.page.marker));
+    return this.client.req('/v1/data/' + this.data_path + query, 'GET', '', headers, (function(_this) {
+      return function(response, status) {
+        _this.offset = 0;
+        if (status === 200) {
+          _this.page = response;
+          _this.error = null;
+        } else {
+          _this.page = null;
+          _this.error = response.error;
+        }
+        if (cb) {
+          return cb();
+        }
+      };
+    })(this));
+  };
+
+  DirListing.prototype.forEach = function(cb) {
+    var iter, recurse, thenCb;
+    thenCb = null;
+    iter = this.iterator();
+    recurse = function(err, value) {
+      if (value === void 0) {
+        if (thenCb) {
+          return thenCb();
+        }
+      } else {
+        cb(err, value);
+        return iter.next(recurse);
+      }
+    };
+    iter.next(recurse);
+    return {
+      then: (function(_this) {
+        return function(cb) {
+          return thenCb = cb;
+        };
+      })(this)
+    };
+  };
+
+  DirListing.prototype.iterator = function() {
+    return {
+      next: (function(_this) {
+        return function(cb) {
+          var dir, dirCount, file, fileCount, nextResult, ref, ref1;
+          if (_this.error) {
+            cb(_this.error, void 0);
+          } else if (_this.page === null) {
+            _this.loadNextPage(function() {
+              return _this.iterator().next(cb);
+            });
+          } else {
+            dirCount = ((ref = _this.page.folders) != null ? ref.length : void 0) || 0;
+            fileCount = ((ref1 = _this.page.files) != null ? ref1.length : void 0) || 0;
+            if (_this.offset < dirCount) {
+              dir = _this.page.folders[_this.offset];
+              _this.offset++;
+              cb(null, new Dir(_this.client, 'data://' + _this.data_path + '/' + dir.name));
+            } else if (_this.offset < dirCount + fileCount) {
+              file = _this.page.files[_this.offset];
+              _this.offset++;
+              nextResult = new File(_this.client, 'data://' + _this.data_path + '/' + file.filename);
+              nextResult.last_modified = file.last_modified;
+              nextResult.size = file.size;
+              cb(null, nextResult);
+            } else if (_this.page.marker) {
+              _this.loadNextPage(function() {
+                return _this.iterator().next(cb);
+              });
+            } else {
+              cb(null, void 0);
+            }
+          }
+        };
+      })(this)
+    };
+  };
+
+  return DirListing;
+
+})();
+
+module.exports = exports = {
+  File: File,
+  Dir: Dir
+};
+
+},{"fs":40,"path":52}],6:[function(require,module,exports){
+module.exports={
+  "_from": "algorithmia",
+  "_id": "algorithmia@0.3.10",
+  "_inBundle": false,
+  "_integrity": "sha1-9xwgqf9WRmCk0c9zlHmV123jRQw=",
+  "_location": "/algorithmia",
+  "_phantomChildren": {},
+  "_requested": {
+    "type": "tag",
+    "registry": true,
+    "raw": "algorithmia",
+    "name": "algorithmia",
+    "escapedName": "algorithmia",
+    "rawSpec": "",
+    "saveSpec": null,
+    "fetchSpec": "latest"
+  },
+  "_requiredBy": [
+    "#USER"],
+  "_args": [
+    [
+      "algorithmia",
+      "/media/vinit/Data/Phishing-detection-using-data-mining/Extension"
+    ]
+  ],
+  "_from": "algorithmia@latest",
+  "_id": "algorithmia@0.3.10",
+  "_inCache": true,
+  "_installable": true,
+  "_location": "/algorithmia",
+  "_nodeVersion": "6.5.0",
+  "_npmOperationalInternal": {
+    "host": "s3://npm-registry-packages",
+    "tmp": "tmp/algorithmia-0.3.10.tgz_1499405400085_0.7770562872756273"
+  },
+  "_npmUser": {
+    "email": "anowell@gmail.com",
+    "name": "anowell"
+  },
+  "_npmVersion": "3.10.3",
+  "_phantomChildren": {},
+  "_requested": {
+    "name": "algorithmia",
+    "raw": "algorithmia",
+    "rawSpec": "",
+    "scope": null,
+    "spec": "latest",
+    "type": "tag"
+  },
+  "_requiredBy": [
+    "/"
+  ],
+  "_resolved": "https://registry.npmjs.org/algorithmia/-/algorithmia-0.3.10.tgz",
+  "_shasum": "f71c20a9ff564660a4d1cf73947995d76de3450c",
+  "_spec": "algorithmia",
+  "_where": "C:\\Users\\PROJECT\\Desktop\\Phishing-detection-using-data-mining\\Extension",
+  "bugs": {
+    "url": "https://github.com/algorithmiaio/algorithmia-nodejs/issues"
+  },
+  "bundleDependencies": false,
+  "dependencies": {},
+  "deprecated": false,
+  "_shrinkwrap": null,
+  "_spec": "algorithmia",
+  "_where": "/media/vinit/Data/Phishing-detection-using-data-mining/Extension",
+  "bugs": {
+    "url": "https://github.com/algorithmiaio/algorithmia-nodejs/issues"
+  },
+  "dependencies": {},
+  "description": "Client library for calling algorithms in the Algorithmia marketplace",
+  "devDependencies": {
+    "gulp": "3.9.*",
+    "gulp-coffee": "2.3.*"
+  },
+  "homepage": "https://github.com/algorithmiaio/algorithmia-nodejs#readme",
+  "keywords": [
+    "algorithm",
+    "cloud",
+    "api"
+  ],
+  "license": "MIT",
+  "main": "./lib/algorithmia.js",
+  "name": "algorithmia",
+  "directories": {},
+  "dist": {
+    "shasum": "f71c20a9ff564660a4d1cf73947995d76de3450c",
+    "tarball": "https://registry.npmjs.org/algorithmia/-/algorithmia-0.3.10.tgz"
+  },
+  "gitHead": "169170e9529daa017e15bd7076d4c1143c5f66bf",
+  "homepage": "https://github.com/algorithmiaio/algorithmia-nodejs#readme",
+  "keywords": [
+    "algorithm",
+    "api",
+    "cloud"
+  ],
+  "license": "MIT",
+  "main": "./lib/algorithmia.js",
+  "maintainers": [
+    {
+      "name": "anowell",
+      "email": "anowell@gmail.com"
+    },
+    {
+      "name": "jamesatha",
+      "email": "jamesa@algorithmia.io"
+    },
+    {
+      "name": "pmcquighan",
+      "email": "pmcquighan@gmail.com"
+    }
+  ],
+  "name": "algorithmia",
+  "optionalDependencies": {},
+  "readme": "ERROR: No README data found!",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/algorithmiaio/algorithmia-nodejs.git"
+  },
+  "scripts": {},
+  "url": "http://github.com/algorithmiaio/algorithmia-nodejs",
+  "version": "0.3.10"
+}
+
+},{}],7:[function(require,module,exports){
 (function (process,global){
 /*!
  * @overview es6-promise - a tiny implementation of Promises/A+.
@@ -1249,7 +1907,7 @@ return Promise$1;
 
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":46}],5:[function(require,module,exports){
+},{"_process":54}],8:[function(require,module,exports){
 // the whatwg-fetch polyfill installs the fetch() function
 // on the global object (window or self)
 //
@@ -1257,7 +1915,7 @@ return Promise$1;
 require('whatwg-fetch');
 module.exports = self.fetch.bind(self);
 
-},{"whatwg-fetch":7}],6:[function(require,module,exports){
+},{"whatwg-fetch":10}],9:[function(require,module,exports){
 (function (Buffer){
 ;(function (sax) { // wrapper for non-node envs
   sax.parser = function (strict, opt) { return new SAXParser(strict, opt) }
@@ -2826,7 +3484,7 @@ module.exports = self.fetch.bind(self);
 })(typeof exports === 'undefined' ? this.sax = {} : exports)
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":38,"stream":61,"string_decoder":62}],7:[function(require,module,exports){
+},{"buffer":43,"stream":73,"string_decoder":78}],10:[function(require,module,exports){
 (function(self) {
   'use strict';
 
@@ -3289,7 +3947,7 @@ module.exports = self.fetch.bind(self);
   self.fetch.polyfill = true
 })(typeof self !== 'undefined' ? self : this);
 
-},{}],8:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   "use strict";
@@ -3303,7 +3961,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{}],9:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   "use strict";
@@ -3432,7 +4090,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./defaults":10,"xmlbuilder":35}],10:[function(require,module,exports){
+},{"./defaults":13,"xmlbuilder":38}],13:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   exports.defaults = {
@@ -3506,7 +4164,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{}],11:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   "use strict";
@@ -3865,7 +4523,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./bom":8,"./defaults":10,"./processors":12,"events":40,"sax":6,"timers":63}],12:[function(require,module,exports){
+},{"./bom":11,"./defaults":13,"./processors":15,"events":46,"sax":9,"timers":79}],15:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   "use strict";
@@ -3901,7 +4559,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{}],13:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   "use strict";
@@ -3940,7 +4598,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./builder":9,"./defaults":10,"./parser":11,"./processors":12}],14:[function(require,module,exports){
+},{"./builder":12,"./defaults":13,"./parser":14,"./processors":15}],17:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var assign, isArray, isEmpty, isFunction, isObject, isPlainObject,
@@ -4015,7 +4673,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{}],15:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLAttribute;
@@ -4048,7 +4706,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{}],16:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLCData, XMLNode,
@@ -4082,7 +4740,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],17:[function(require,module,exports){
+},{"./XMLNode":30}],20:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLComment, XMLNode,
@@ -4116,7 +4774,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],18:[function(require,module,exports){
+},{"./XMLNode":30}],21:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDTDAttList, XMLNode,
@@ -4168,7 +4826,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],19:[function(require,module,exports){
+},{"./XMLNode":30}],22:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDTDElement, XMLNode,
@@ -4205,7 +4863,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],20:[function(require,module,exports){
+},{"./XMLNode":30}],23:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDTDEntity, XMLNode, isObject,
@@ -4263,7 +4921,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLNode":27}],21:[function(require,module,exports){
+},{"./Utility":17,"./XMLNode":30}],24:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDTDNotation, XMLNode,
@@ -4302,7 +4960,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],22:[function(require,module,exports){
+},{"./XMLNode":30}],25:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDeclaration, XMLNode, isObject,
@@ -4344,7 +5002,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLNode":27}],23:[function(require,module,exports){
+},{"./Utility":17,"./XMLNode":30}],26:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDocType, XMLNode, isObject,
@@ -4453,7 +5111,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLDTDAttList":18,"./XMLDTDElement":19,"./XMLDTDEntity":20,"./XMLDTDNotation":21,"./XMLNode":27}],24:[function(require,module,exports){
+},{"./Utility":17,"./XMLDTDAttList":21,"./XMLDTDElement":22,"./XMLDTDEntity":23,"./XMLDTDNotation":24,"./XMLNode":30}],27:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDocument, XMLNode, XMLStringWriter, XMLStringifier, isPlainObject,
@@ -4503,7 +5161,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLNode":27,"./XMLStringWriter":31,"./XMLStringifier":32}],25:[function(require,module,exports){
+},{"./Utility":17,"./XMLNode":30,"./XMLStringWriter":34,"./XMLStringifier":35}],28:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLAttribute, XMLCData, XMLComment, XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDeclaration, XMLDocType, XMLDocumentCB, XMLElement, XMLProcessingInstruction, XMLRaw, XMLStringWriter, XMLStringifier, XMLText, isFunction, isObject, isPlainObject, ref,
@@ -4907,7 +5565,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLAttribute":15,"./XMLCData":16,"./XMLComment":17,"./XMLDTDAttList":18,"./XMLDTDElement":19,"./XMLDTDEntity":20,"./XMLDTDNotation":21,"./XMLDeclaration":22,"./XMLDocType":23,"./XMLElement":26,"./XMLProcessingInstruction":28,"./XMLRaw":29,"./XMLStringWriter":31,"./XMLStringifier":32,"./XMLText":33}],26:[function(require,module,exports){
+},{"./Utility":17,"./XMLAttribute":18,"./XMLCData":19,"./XMLComment":20,"./XMLDTDAttList":21,"./XMLDTDElement":22,"./XMLDTDEntity":23,"./XMLDTDNotation":24,"./XMLDeclaration":25,"./XMLDocType":26,"./XMLElement":29,"./XMLProcessingInstruction":31,"./XMLRaw":32,"./XMLStringWriter":34,"./XMLStringifier":35,"./XMLText":36}],29:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLAttribute, XMLElement, XMLNode, isFunction, isObject, ref,
@@ -5020,7 +5678,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLAttribute":15,"./XMLNode":27}],27:[function(require,module,exports){
+},{"./Utility":17,"./XMLAttribute":18,"./XMLNode":30}],30:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLCData, XMLComment, XMLDeclaration, XMLDocType, XMLElement, XMLNode, XMLProcessingInstruction, XMLRaw, XMLText, isEmpty, isFunction, isObject, ref,
@@ -5454,7 +6112,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLCData":16,"./XMLComment":17,"./XMLDeclaration":22,"./XMLDocType":23,"./XMLElement":26,"./XMLProcessingInstruction":28,"./XMLRaw":29,"./XMLText":33}],28:[function(require,module,exports){
+},{"./Utility":17,"./XMLCData":19,"./XMLComment":20,"./XMLDeclaration":25,"./XMLDocType":26,"./XMLElement":29,"./XMLProcessingInstruction":31,"./XMLRaw":32,"./XMLText":36}],31:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLNode, XMLProcessingInstruction,
@@ -5491,7 +6149,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],29:[function(require,module,exports){
+},{"./XMLNode":30}],32:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLNode, XMLRaw,
@@ -5525,7 +6183,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],30:[function(require,module,exports){
+},{"./XMLNode":30}],33:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLCData, XMLComment, XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDeclaration, XMLDocType, XMLElement, XMLProcessingInstruction, XMLRaw, XMLStreamWriter, XMLText, XMLWriterBase,
@@ -5806,7 +6464,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLCData":16,"./XMLComment":17,"./XMLDTDAttList":18,"./XMLDTDElement":19,"./XMLDTDEntity":20,"./XMLDTDNotation":21,"./XMLDeclaration":22,"./XMLDocType":23,"./XMLElement":26,"./XMLProcessingInstruction":28,"./XMLRaw":29,"./XMLText":33,"./XMLWriterBase":34}],31:[function(require,module,exports){
+},{"./XMLCData":19,"./XMLComment":20,"./XMLDTDAttList":21,"./XMLDTDElement":22,"./XMLDTDEntity":23,"./XMLDTDNotation":24,"./XMLDeclaration":25,"./XMLDocType":26,"./XMLElement":29,"./XMLProcessingInstruction":31,"./XMLRaw":32,"./XMLText":36,"./XMLWriterBase":37}],34:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLCData, XMLComment, XMLDTDAttList, XMLDTDElement, XMLDTDEntity, XMLDTDNotation, XMLDeclaration, XMLDocType, XMLElement, XMLProcessingInstruction, XMLRaw, XMLStringWriter, XMLText, XMLWriterBase,
@@ -6142,7 +6800,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLCData":16,"./XMLComment":17,"./XMLDTDAttList":18,"./XMLDTDElement":19,"./XMLDTDEntity":20,"./XMLDTDNotation":21,"./XMLDeclaration":22,"./XMLDocType":23,"./XMLElement":26,"./XMLProcessingInstruction":28,"./XMLRaw":29,"./XMLText":33,"./XMLWriterBase":34}],32:[function(require,module,exports){
+},{"./XMLCData":19,"./XMLComment":20,"./XMLDTDAttList":21,"./XMLDTDElement":22,"./XMLDTDEntity":23,"./XMLDTDNotation":24,"./XMLDeclaration":25,"./XMLDocType":26,"./XMLElement":29,"./XMLProcessingInstruction":31,"./XMLRaw":32,"./XMLText":36,"./XMLWriterBase":37}],35:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLStringifier,
@@ -6307,7 +6965,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{}],33:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLNode, XMLText,
@@ -6341,7 +6999,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./XMLNode":27}],34:[function(require,module,exports){
+},{"./XMLNode":30}],37:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLWriterBase,
@@ -6433,7 +7091,7 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{}],35:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 // Generated by CoffeeScript 1.12.7
 (function() {
   var XMLDocument, XMLDocumentCB, XMLStreamWriter, XMLStringWriter, assign, isFunction, ref;
@@ -6488,7 +7146,355 @@ module.exports = self.fetch.bind(self);
 
 }).call(this);
 
-},{"./Utility":14,"./XMLDocument":24,"./XMLDocumentCB":25,"./XMLStreamWriter":30,"./XMLStringWriter":31}],36:[function(require,module,exports){
+},{"./Utility":17,"./XMLDocument":27,"./XMLDocumentCB":28,"./XMLStreamWriter":33,"./XMLStringWriter":34}],39:[function(require,module,exports){
+var input = `having_IP_Address;URL_Length;Shortining_Service;having_At_Symbol;double_slash_redirecting;Prefix_Suffix;having_Sub_Domain;SSLfinal_State;Domain_registeration_length;Favicon;HTTPS_token;Request_URL;URL_of_Anchor;Links_in_tags;SFH;Submitting_to_email;Abnormal_URL;on_mouseover;RightClick;popUpWidnow;Iframe;age_of_domain;DNSRecord;web_traffic;Google_Index;Statistical_report;Result
+IP1;Length2;Short3;At4;DSlash5;PreSuf6;SbDom7;SSL8;DomLen9;Fav10;HTTPSToken12;Req13;Anchor14;Links15;SFH16;Mail17;Abnormal18;Status20;RClick21;Popup22;Iframe23;AgeDom24;DNS25;Alexa26;GoogleIndex28;Stat29;-1    
+`;
+
+var Algorithmia=require('algorithmia');
+
+function sendData(input, hostname, href){
+    Algorithmia.client("***REMOVED***")
+    .algo("vneogi199/whoisPython/1.0.3")
+    .pipe(href)
+    .then(function(output) {
+    	input=input.replace("DNS25",output.result[0]);
+    	input=input.replace("Abnormal18",output.result[1]);
+    	input=input.replace("DomLen9",output.result[2]);
+    	input=input.replace("AgeDom24",output.result[3]);
+    	Algorithmia.client("***REMOVED***")
+    	.algo("vneogi199/FetchURLFeatures/1.0.2")
+    	.pipe(hostname)
+    	.then(function(output){
+    		input=input.replace("GoogleIndex28",output.result[0]);
+    		input=input.replace("SSL8",output.result[1]);
+    		console.log(input);
+    		Algorithmia.client("***REMOVED***")
+	    	.algo("vneogi199/ScikitRandomForest/2.0.0")
+	    	.pipe(input)
+	    	.then(function(output){
+	    		console.log(output.result[0]);
+	    		if(output.result[0]==1){
+					var div=document.createElement("div");
+					div.setAttribute("id", "se-pre-con");
+					document.body.appendChild(div);
+					document.getElementById("se-pre-con").innerHTML = "<br><br><br><br><h1>Warning!!</h1><br><img src='http://pluspng.com/img-png/png-wrong-cross-clear-cross-empty-incorrect-red-wrong-icon-512.png' style='height: 256px; width: 256px;'></img><br><p>This Page is suspected as Phishing Site.</p>";
+					var div2 = document.createElement("div");
+					div2.setAttribute("id", "del");
+					document.getElementById('se-pre-con').appendChild(div2);
+					document.getElementById("del").innerHTML = "<a>Click Here to Close the Message.</a>"
+					div2.onclick = function() {this.parentNode.removeChild(this);document.getElementById('se-pre-con').remove();
+					}
+	    		}
+	    	});
+    	});
+    });
+}
+
+//1 having_IP_Address
+input=window.location.hostname.match(/[a-z]/i)?input.replace("IP1","-1"):input.replace("IP1",1);
+
+//2 URL_Length
+input=location.hostname.length>75?input.replace("Length2","1"):location.hostname.length>=54?input.replace("Length2","0"):input.replace("Length2","-1");
+
+//3 Shortining_Service
+function isShortUrl(url){
+    var query = url.split('?');
+    var fragment = url.split('/');
+    if (url.length > 30) return false;    
+    if (query[1] != undefined) return false;
+    if (fragment[3] == undefined || fragment[3] == '' || fragment[5] != undefined) return false;
+    if (fragment[2].length > 10) return false;   
+    return true;
+}
+input=isShortUrl(window.location.href)?input.replace("Short3","1"):input.replace("Short3","-1");
+
+//4 having_At_Symbol
+input=window.location.hostname.match(/@/i)?input.replace("At4","1"):input.replace("At4","-1");
+
+//5 double_slash_redirecting
+input=location.href.lastIndexOf("//")>7?input.replace("DSlash5","1"):input.replace("DSlash5","-1");
+
+//6 Prefix_Suffix
+input=window.location.hostname.match(/-/i)?input.replace("PreSuf6","1"):input.replace("PreSuf6","-1");
+
+//7 having_Sub_Domain
+var TLDs = ["ac", "ad", "ae", "aero", "af", "ag", "ai", "al", "am", "an", "ao", "aq", "ar", "arpa", "as", "asia", "at", "au", "aw", "ax", "az", "ba", "bb", "bd", "be", "bf", "bg", "bh", "bi", "biz", "bj", "bm", "bn", "bo", "br", "bs", "bt", "bv", "bw", "by", "bz", "ca", "cat", "cc", "cd", "cf", "cg", "ch", "ci", "ck", "cl", "cm", "cn", "co", "com", "coop", "cr", "cu", "cv", "cx", "cy", "cz", "de", "dj", "dk", "dm", "do", "dz", "ec", "edu", "ee", "eg", "er", "es", "et", "eu", "fi", "fj", "fk", "fm", "fo", "fr", "ga", "gb", "gd", "ge", "gf", "gg", "gh", "gi", "gl", "gm", "gn", "gov", "gp", "gq", "gr", "gs", "gt", "gu", "gw", "gy", "hk", "hm", "hn", "hr", "ht", "hu", "id", "ie", "il", "im", "in", "info", "int", "io", "iq", "ir", "is", "it", "je", "jm", "jo", "jobs", "jp", "ke", "kg", "kh", "ki", "km", "kn", "kp", "kr", "kw", "ky", "kz", "la", "lb", "lc", "li", "lk", "lr", "ls", "lt", "lu", "lv", "ly", "ma", "mc", "md", "me", "mg", "mh", "mil", "mk", "ml", "mm", "mn", "mo", "mobi", "mp", "mq", "mr", "ms", "mt", "mu", "museum", "mv", "mw", "mx", "my", "mz", "na", "name", "nc", "ne", "net", "nf", "ng", "ni", "nl", "no", "np", "nr", "nu", "nz", "om", "org", "pa", "pe", "pf", "pg", "ph", "pk", "pl", "pm", "pn", "pr", "pro", "ps", "pt", "pw", "py", "qa", "re", "ro", "rs", "ru", "rw", "sa", "sb", "sc", "sd", "se", "sg", "sh", "si", "sj", "sk", "sl", "sm", "sn", "so", "sr", "st", "su", "sv", "sy", "sz", "tc", "td", "tel", "tf", "tg", "th", "tj", "tk", "tl", "tm", "tn", "to", "tp", "tr", "travel", "tt", "tv", "tw", "tz", "ua", "ug", "uk", "us", "uy", "uz", "va", "vc", "ve", "vg", "vi", "vn", "vu", "wf", "ws", "xn--0zwm56d", "xn--11b5bs3a9aj6g", "xn--3e0b707e", "xn--45brj9c", "xn--80akhbyknj4f", "xn--90a3ac", "xn--9t4b11yi5a", "xn--clchc0ea0b2g2a9gcd", "xn--deba0ad", "xn--fiqs8s", "xn--fiqz9s", "xn--fpcrj9c3d", "xn--fzc2c9e2c", "xn--g6w251d", "xn--gecrj9c", "xn--h2brj9c", "xn--hgbk6aj7f53bba", "xn--hlcj6aya9esc7a", "xn--j6w193g", "xn--jxalpdlp", "xn--kgbechtv", "xn--kprw13d", "xn--kpry57d", "xn--lgbbat1ad8j", "xn--mgbaam7a8h", "xn--mgbayh7gpa", "xn--mgbbh1a71e", "xn--mgbc0a9azcg", "xn--mgberp4a5d4ar", "xn--o3cw4h", "xn--ogbpf8fl", "xn--p1ai", "xn--pgbs0dh", "xn--s9brj9c", "xn--wgbh1c", "xn--wgbl6a", "xn--xkc2al3hye2a", "xn--xkc2dl3a5ee0h", "xn--yfro4i67o", "xn--ygbi2ammx", "xn--zckzah", "xxx", "ye", "yt", "za", "zm", "zw"];
+
+var domain_list=["esy.es","hol.es" ,"000webhostapp.com" ,"16mb.com" ,"bit.ly","for-our.info", "beget.tech" ,"blogspot.com","weebly.com","raymannag.ch" ];
+var ips_list=["146.112.61.108","31.170.160.61","67.199.248.11","67.199.248.10","69.50.209.78","192.254.172.78","216.58.193.65","23.234.229.68","173.212.223.160","60.249.179.122"];
+
+function getDomain(url,value){
+    var parts = url.split('.');
+    if (parts[0] === 'www'){
+        parts.shift();
+    }
+    if(value==1)
+        {
+            for(tld in TLDs){
+                if(TLDs[tld]==parts[parts.length-1]){
+			    parts.splice(-1);
+			    break;
+		        }
+            }
+        return parts.length>2?"1":parts.length==2?"0":"-1";
+        }
+    if(value==2)
+        {
+        	if (window.location.hostname.match(/[a-z]/i))
+        	{
+
+            for(domain in domain_list){             
+                if(domain_list[domain]==parts[parts.length-2].concat(".",parts[parts.length-1]))
+                    return "1";                
+                } 
+            return "-1";}
+
+            else
+            {
+            	for(ip in ips_list){             
+                	if(ips_list[ip]==window.location.hostname)
+                    	return "1";                
+            	} 
+            	return "-1";
+            }
+        }                   
+}
+
+input=input.replace("SbDom7",getDomain(window.location.hostname,1));
+
+
+
+//10 favicon
+function getFavicon()
+{
+ 	var favicon = undefined;
+	var nodeList = document.getElementsByTagName("link");
+    for (var i = 0; i < nodeList.length; i++)
+    {
+    	if((nodeList[i].getAttribute("rel") == "icon")||(nodeList[i].getAttribute("rel") == "shortcut icon"))
+        {
+        	favicon = nodeList[i].getAttribute("href");
+        }
+    }
+    if(favicon){
+    	if(favicon.indexOf("http") >=0 || favicon.indexOf("https") >=0)
+			return "1"; 
+		else return "-1";
+    }
+    else{
+    	return "1";
+    }
+    
+}
+input=input.replace("Fav10",getFavicon());
+
+
+//12 HTTPS_token
+input=(window.location.hostname.search('https')!=-1)?input.replace("HTTPSToken12","1"):input.replace("HTTPSToken12","-1");
+
+//13 requesturl
+function getSource(word)
+{
+    var nodeList = document.getElementsByTagName(word);
+    var Code=[];
+     for (var i = 0; i < nodeList.length; i++)
+     {
+          Code[i] = nodeList[i].getAttribute("src");
+     }
+     Code = Code.filter(function(n){ return n != undefined }); 
+    return Code;
+}
+function getrequesturl()
+{
+	p=0;
+	Image_URL=getSource("img");
+	Video_URL=getSource("video");
+	Audio_URL=getSource("audio");
+	c=Image_URL.length+Video_URL.length+Audio_URL.length;
+	for (i in Image_URL)
+	{
+		if (Image_URL[i].indexOf("http") >=0 || Image_URL[i].indexOf("https") >=0 ) 
+			p=p+1;
+	}
+	for (i in Video_URL)
+	{
+		if (Video_URL[i].indexOf("http") >=0 || Video_URL[i].indexOf("https") >=0 ) 
+			p=p+1;
+	}
+	for (i in Audio_URL)
+	{
+		if (Audio_URL[i].indexOf("http") >=0 || Audio_URL[i].indexOf("https") >=0 ) 
+			p=p+1;
+	} 
+	return p/c<0.42?-1:1;
+}
+input=input.replace("Req13",getrequesturl());
+
+//14 URL_of_Anchor
+function getURLs(word)
+{
+	var nodeList = document.getElementsByTagName(word);
+    var Code=[];
+     for (var i = 0; i < nodeList.length; i++)
+     {
+          Code[i] = nodeList[i].getAttribute("href");
+     }
+    Code = Code.filter(function(n){ return n != undefined }); 
+   
+    return Code;
+           
+} 
+function getanchorurl()
+{
+	p=0;
+	Anchor_URL=getURLs("a");
+	c=Anchor_URL.length;
+	for (a in Anchor_URL)
+	{ 
+		if(Anchor_URL[a].indexOf("#") >=0  || Anchor_URL[a].indexOf(":") >=0)
+			p=p+1;
+		else
+		{	
+			if (Anchor_URL[a].indexOf("http") >=0 || Anchor_URL[a].indexOf("https") >=0)
+				p=p+1;
+		}
+	}
+	return p/c<0.31?-1:p/c<0.67?0:1;
+}
+input=input.replace("Anchor14",getanchorurl()); 
+
+//15 Links_in_tags
+function gettagurls()
+{		
+	p=0;
+	var nodeList = document.getElementsByTagName("meta");
+    var Meta_URL=[];
+    for (var i = 0; i < nodeList.length; i++)
+    {
+         Meta_URL[i] = nodeList[i].getAttribute("content");
+    }
+    Meta_URL = Meta_URL.filter(function(n){ return n != undefined }); 	
+	Link_URL=getURLs("link");
+	Script_URL=getSource("script");
+    c=Meta_URL.length+Link_URL.length+Script_URL.length;
+    for (a in Link_URL)
+	{ 		
+		if(Link_URL[a].indexOf("#") >=0  || Link_URL[a].indexOf(":") >=0)
+			p=p+1;		
+	}
+	for (a in Script_URL)
+	{ 		
+		if(Script_URL[a].indexOf("#") >=0  || Script_URL[a].indexOf(":") >=0)
+			p=p+1;		
+	}
+	for (a in Meta_URL){
+		last=0;
+		while(last != -1){
+    		last = Meta_URL[a].indexOf("http",last);    		
+    		if(last != -1){
+        		p=p+1;
+        		last += "http".length;
+    		}
+    	}
+	}
+	return p/c<0.17?-1:p/c<0.81?0:1;	
+}
+input=input.replace("Links15",gettagurls());
+
+//16 SFH
+function findHttp()
+{
+ 	
+	var nodeList = document.getElementsByTagName("form");
+	var Code=[];
+    for (var i = 0; i < nodeList.length; i++)
+     {
+          Code[i] = nodeList[i].getAttribute("action");
+     }
+    if(Code.length != 0){
+    	for (a in Code)
+		{ 	
+			if (Code[a]==null || Code[a]=="" || Code[a]=="about:blank")
+				return "1";
+			else if(Code[a].indexOf("http") >=0 || Code[a].indexOf("https") >=0)
+				return "0"; 
+		}
+		return "-1";
+    	
+    }
+    else
+    	return "-1";    
+}
+
+input=input.replace("SFH16",findHttp());
+
+//17 Submitting_to_email
+function findWord(word) {
+	Code=document.getElementsByTagName('html')[0].innerHTML;
+	if (Code.indexOf(word) >=0) {
+		return 1;
+	}
+    else 
+ 		return -1; 
+}
+
+input=input.replace("Mail17",findWord('action="mailto'));
+
+
+//20 on_mouseover
+
+input=input.replace("Status20",findWord('onmouseover="window.status'));
+
+//21 RightClick
+input=input.replace("RClick21",findWord("event.button==2"));
+
+//22 popUpWidnow
+function findPopupForm(word) {
+	if (window.opener)	{
+		Code=document.getElementsByTagName('html')[0].innerHTML;
+		if (Code.indexOf(word) >=0) 
+			return 1;
+    	else
+    		return -1;
+	}
+ 	else
+ 		return -1;
+}
+input=input.replace("Popup22",findWord("form"));
+
+//23 iframe
+input=input.replace("Iframe23",findWord("iframe"));
+
+//29 Statistical_report
+
+input=input.replace("Stat29",getDomain(window.location.hostname,2));
+
+
+//26 web_traffic
+var alexa = require('alexarank');
+alexa(location.hostname, function(error, result) {
+    if (!error) {
+        if(!result.rank){
+            input=input.replace("Alexa26",1);
+        }
+        else if(parseInt(result.rank)<100000)
+            input=input.replace("Alexa26",-1);
+        else input=input.replace("Alexa26",0);
+    } else {
+        input=input.replace("Alexa26",0);
+    }
+    sendData(input,location.hostname,location.href);
+});
+
+
+
+
+
+
+},{"alexarank":1,"algorithmia":4}],40:[function(require,module,exports){
+
+},{}],41:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -6606,9 +7612,9 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],37:[function(require,module,exports){
-
-},{}],38:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
+arguments[4][40][0].apply(exports,arguments)
+},{"dup":40}],43:[function(require,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -8346,7 +9352,73 @@ function numberIsNaN (obj) {
   return obj !== obj // eslint-disable-line no-self-compare
 }
 
-},{"base64-js":36,"ieee754":41}],39:[function(require,module,exports){
+},{"base64-js":41,"ieee754":48}],44:[function(require,module,exports){
+module.exports = {
+  "100": "Continue",
+  "101": "Switching Protocols",
+  "102": "Processing",
+  "200": "OK",
+  "201": "Created",
+  "202": "Accepted",
+  "203": "Non-Authoritative Information",
+  "204": "No Content",
+  "205": "Reset Content",
+  "206": "Partial Content",
+  "207": "Multi-Status",
+  "208": "Already Reported",
+  "226": "IM Used",
+  "300": "Multiple Choices",
+  "301": "Moved Permanently",
+  "302": "Found",
+  "303": "See Other",
+  "304": "Not Modified",
+  "305": "Use Proxy",
+  "307": "Temporary Redirect",
+  "308": "Permanent Redirect",
+  "400": "Bad Request",
+  "401": "Unauthorized",
+  "402": "Payment Required",
+  "403": "Forbidden",
+  "404": "Not Found",
+  "405": "Method Not Allowed",
+  "406": "Not Acceptable",
+  "407": "Proxy Authentication Required",
+  "408": "Request Timeout",
+  "409": "Conflict",
+  "410": "Gone",
+  "411": "Length Required",
+  "412": "Precondition Failed",
+  "413": "Payload Too Large",
+  "414": "URI Too Long",
+  "415": "Unsupported Media Type",
+  "416": "Range Not Satisfiable",
+  "417": "Expectation Failed",
+  "418": "I'm a teapot",
+  "421": "Misdirected Request",
+  "422": "Unprocessable Entity",
+  "423": "Locked",
+  "424": "Failed Dependency",
+  "425": "Unordered Collection",
+  "426": "Upgrade Required",
+  "428": "Precondition Required",
+  "429": "Too Many Requests",
+  "431": "Request Header Fields Too Large",
+  "451": "Unavailable For Legal Reasons",
+  "500": "Internal Server Error",
+  "501": "Not Implemented",
+  "502": "Bad Gateway",
+  "503": "Service Unavailable",
+  "504": "Gateway Timeout",
+  "505": "HTTP Version Not Supported",
+  "506": "Variant Also Negotiates",
+  "507": "Insufficient Storage",
+  "508": "Loop Detected",
+  "509": "Bandwidth Limit Exceeded",
+  "510": "Not Extended",
+  "511": "Network Authentication Required"
+}
+
+},{}],45:[function(require,module,exports){
 (function (Buffer){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -8457,7 +9529,7 @@ function objectToString(o) {
 }
 
 }).call(this,{"isBuffer":require("../../is-buffer/index.js")})
-},{"../../is-buffer/index.js":43}],40:[function(require,module,exports){
+},{"../../is-buffer/index.js":50}],46:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8978,7 +10050,40 @@ function functionBindPolyfill(context) {
   };
 }
 
-},{}],41:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
+var http = require('http')
+var url = require('url')
+
+var https = module.exports
+
+for (var key in http) {
+  if (http.hasOwnProperty(key)) https[key] = http[key]
+}
+
+https.request = function (params, cb) {
+  params = validateParams(params)
+  return http.request.call(this, params, cb)
+}
+
+https.get = function (params, cb) {
+  params = validateParams(params)
+  return http.get.call(this, params, cb)
+}
+
+function validateParams (params) {
+  if (typeof params === 'string') {
+    params = url.parse(params)
+  }
+  if (!params.protocol) {
+    params.protocol = 'https:'
+  }
+  if (params.protocol !== 'https:') {
+    throw new Error('Protocol "' + params.protocol + '" not supported. Expected "https:"')
+  }
+  return params
+}
+
+},{"http":74,"url":81}],48:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
   var eLen = nBytes * 8 - mLen - 1
@@ -9064,7 +10169,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],42:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -9089,7 +10194,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],43:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 /*!
  * Determine if an object is a Buffer
  *
@@ -9112,14 +10217,242 @@ function isSlowBuffer (obj) {
   return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
 }
 
-},{}],44:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 var toString = {}.toString;
 
 module.exports = Array.isArray || function (arr) {
   return toString.call(arr) == '[object Array]';
 };
 
-},{}],45:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
+(function (process){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// resolves . and .. elements in a path array with directory names there
+// must be no slashes, empty elements, or device names (c:\) in the array
+// (so also no leading and trailing slashes - it does not distinguish
+// relative and absolute paths)
+function normalizeArray(parts, allowAboveRoot) {
+  // if the path tries to go above the root, `up` ends up > 0
+  var up = 0;
+  for (var i = parts.length - 1; i >= 0; i--) {
+    var last = parts[i];
+    if (last === '.') {
+      parts.splice(i, 1);
+    } else if (last === '..') {
+      parts.splice(i, 1);
+      up++;
+    } else if (up) {
+      parts.splice(i, 1);
+      up--;
+    }
+  }
+
+  // if the path is allowed to go above the root, restore leading ..s
+  if (allowAboveRoot) {
+    for (; up--; up) {
+      parts.unshift('..');
+    }
+  }
+
+  return parts;
+}
+
+// Split a filename into [root, dir, basename, ext], unix version
+// 'root' is just a slash, or nothing.
+var splitPathRe =
+    /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
+var splitPath = function(filename) {
+  return splitPathRe.exec(filename).slice(1);
+};
+
+// path.resolve([from ...], to)
+// posix version
+exports.resolve = function() {
+  var resolvedPath = '',
+      resolvedAbsolute = false;
+
+  for (var i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
+    var path = (i >= 0) ? arguments[i] : process.cwd();
+
+    // Skip empty and invalid entries
+    if (typeof path !== 'string') {
+      throw new TypeError('Arguments to path.resolve must be strings');
+    } else if (!path) {
+      continue;
+    }
+
+    resolvedPath = path + '/' + resolvedPath;
+    resolvedAbsolute = path.charAt(0) === '/';
+  }
+
+  // At this point the path should be resolved to a full absolute path, but
+  // handle relative paths to be safe (might happen when process.cwd() fails)
+
+  // Normalize the path
+  resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
+    return !!p;
+  }), !resolvedAbsolute).join('/');
+
+  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
+};
+
+// path.normalize(path)
+// posix version
+exports.normalize = function(path) {
+  var isAbsolute = exports.isAbsolute(path),
+      trailingSlash = substr(path, -1) === '/';
+
+  // Normalize the path
+  path = normalizeArray(filter(path.split('/'), function(p) {
+    return !!p;
+  }), !isAbsolute).join('/');
+
+  if (!path && !isAbsolute) {
+    path = '.';
+  }
+  if (path && trailingSlash) {
+    path += '/';
+  }
+
+  return (isAbsolute ? '/' : '') + path;
+};
+
+// posix version
+exports.isAbsolute = function(path) {
+  return path.charAt(0) === '/';
+};
+
+// posix version
+exports.join = function() {
+  var paths = Array.prototype.slice.call(arguments, 0);
+  return exports.normalize(filter(paths, function(p, index) {
+    if (typeof p !== 'string') {
+      throw new TypeError('Arguments to path.join must be strings');
+    }
+    return p;
+  }).join('/'));
+};
+
+
+// path.relative(from, to)
+// posix version
+exports.relative = function(from, to) {
+  from = exports.resolve(from).substr(1);
+  to = exports.resolve(to).substr(1);
+
+  function trim(arr) {
+    var start = 0;
+    for (; start < arr.length; start++) {
+      if (arr[start] !== '') break;
+    }
+
+    var end = arr.length - 1;
+    for (; end >= 0; end--) {
+      if (arr[end] !== '') break;
+    }
+
+    if (start > end) return [];
+    return arr.slice(start, end - start + 1);
+  }
+
+  var fromParts = trim(from.split('/'));
+  var toParts = trim(to.split('/'));
+
+  var length = Math.min(fromParts.length, toParts.length);
+  var samePartsLength = length;
+  for (var i = 0; i < length; i++) {
+    if (fromParts[i] !== toParts[i]) {
+      samePartsLength = i;
+      break;
+    }
+  }
+
+  var outputParts = [];
+  for (var i = samePartsLength; i < fromParts.length; i++) {
+    outputParts.push('..');
+  }
+
+  outputParts = outputParts.concat(toParts.slice(samePartsLength));
+
+  return outputParts.join('/');
+};
+
+exports.sep = '/';
+exports.delimiter = ':';
+
+exports.dirname = function(path) {
+  var result = splitPath(path),
+      root = result[0],
+      dir = result[1];
+
+  if (!root && !dir) {
+    // No dirname whatsoever
+    return '.';
+  }
+
+  if (dir) {
+    // It has a dirname, strip trailing slash
+    dir = dir.substr(0, dir.length - 1);
+  }
+
+  return root + dir;
+};
+
+
+exports.basename = function(path, ext) {
+  var f = splitPath(path)[2];
+  // TODO: make this comparison case-insensitive on windows?
+  if (ext && f.substr(-1 * ext.length) === ext) {
+    f = f.substr(0, f.length - ext.length);
+  }
+  return f;
+};
+
+
+exports.extname = function(path) {
+  return splitPath(path)[3];
+};
+
+function filter (xs, f) {
+    if (xs.filter) return xs.filter(f);
+    var res = [];
+    for (var i = 0; i < xs.length; i++) {
+        if (f(xs[i], i, xs)) res.push(xs[i]);
+    }
+    return res;
+}
+
+// String.prototype.substr - negative index don't work in IE8
+var substr = 'ab'.substr(-1) === 'b'
+    ? function (str, start, len) { return str.substr(start, len) }
+    : function (str, start, len) {
+        if (start < 0) start = str.length + start;
+        return str.substr(start, len);
+    }
+;
+
+}).call(this,require('_process'))
+},{"_process":54}],53:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -9167,7 +10500,7 @@ function nextTick(fn, arg1, arg2, arg3) {
 
 
 }).call(this,require('_process'))
-},{"_process":46}],46:[function(require,module,exports){
+},{"_process":54}],54:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -9353,10 +10686,726 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],47:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
+(function (global){
+/*! https://mths.be/punycode v1.4.1 by @mathias */
+;(function(root) {
+
+	/** Detect free variables */
+	var freeExports = typeof exports == 'object' && exports &&
+		!exports.nodeType && exports;
+	var freeModule = typeof module == 'object' && module &&
+		!module.nodeType && module;
+	var freeGlobal = typeof global == 'object' && global;
+	if (
+		freeGlobal.global === freeGlobal ||
+		freeGlobal.window === freeGlobal ||
+		freeGlobal.self === freeGlobal
+	) {
+		root = freeGlobal;
+	}
+
+	/**
+	 * The `punycode` object.
+	 * @name punycode
+	 * @type Object
+	 */
+	var punycode,
+
+	/** Highest positive signed 32-bit float value */
+	maxInt = 2147483647, // aka. 0x7FFFFFFF or 2^31-1
+
+	/** Bootstring parameters */
+	base = 36,
+	tMin = 1,
+	tMax = 26,
+	skew = 38,
+	damp = 700,
+	initialBias = 72,
+	initialN = 128, // 0x80
+	delimiter = '-', // '\x2D'
+
+	/** Regular expressions */
+	regexPunycode = /^xn--/,
+	regexNonASCII = /[^\x20-\x7E]/, // unprintable ASCII chars + non-ASCII chars
+	regexSeparators = /[\x2E\u3002\uFF0E\uFF61]/g, // RFC 3490 separators
+
+	/** Error messages */
+	errors = {
+		'overflow': 'Overflow: input needs wider integers to process',
+		'not-basic': 'Illegal input >= 0x80 (not a basic code point)',
+		'invalid-input': 'Invalid input'
+	},
+
+	/** Convenience shortcuts */
+	baseMinusTMin = base - tMin,
+	floor = Math.floor,
+	stringFromCharCode = String.fromCharCode,
+
+	/** Temporary variable */
+	key;
+
+	/*--------------------------------------------------------------------------*/
+
+	/**
+	 * A generic error utility function.
+	 * @private
+	 * @param {String} type The error type.
+	 * @returns {Error} Throws a `RangeError` with the applicable error message.
+	 */
+	function error(type) {
+		throw new RangeError(errors[type]);
+	}
+
+	/**
+	 * A generic `Array#map` utility function.
+	 * @private
+	 * @param {Array} array The array to iterate over.
+	 * @param {Function} callback The function that gets called for every array
+	 * item.
+	 * @returns {Array} A new array of values returned by the callback function.
+	 */
+	function map(array, fn) {
+		var length = array.length;
+		var result = [];
+		while (length--) {
+			result[length] = fn(array[length]);
+		}
+		return result;
+	}
+
+	/**
+	 * A simple `Array#map`-like wrapper to work with domain name strings or email
+	 * addresses.
+	 * @private
+	 * @param {String} domain The domain name or email address.
+	 * @param {Function} callback The function that gets called for every
+	 * character.
+	 * @returns {Array} A new string of characters returned by the callback
+	 * function.
+	 */
+	function mapDomain(string, fn) {
+		var parts = string.split('@');
+		var result = '';
+		if (parts.length > 1) {
+			// In email addresses, only the domain name should be punycoded. Leave
+			// the local part (i.e. everything up to `@`) intact.
+			result = parts[0] + '@';
+			string = parts[1];
+		}
+		// Avoid `split(regex)` for IE8 compatibility. See #17.
+		string = string.replace(regexSeparators, '\x2E');
+		var labels = string.split('.');
+		var encoded = map(labels, fn).join('.');
+		return result + encoded;
+	}
+
+	/**
+	 * Creates an array containing the numeric code points of each Unicode
+	 * character in the string. While JavaScript uses UCS-2 internally,
+	 * this function will convert a pair of surrogate halves (each of which
+	 * UCS-2 exposes as separate characters) into a single code point,
+	 * matching UTF-16.
+	 * @see `punycode.ucs2.encode`
+	 * @see <https://mathiasbynens.be/notes/javascript-encoding>
+	 * @memberOf punycode.ucs2
+	 * @name decode
+	 * @param {String} string The Unicode input string (UCS-2).
+	 * @returns {Array} The new array of code points.
+	 */
+	function ucs2decode(string) {
+		var output = [],
+		    counter = 0,
+		    length = string.length,
+		    value,
+		    extra;
+		while (counter < length) {
+			value = string.charCodeAt(counter++);
+			if (value >= 0xD800 && value <= 0xDBFF && counter < length) {
+				// high surrogate, and there is a next character
+				extra = string.charCodeAt(counter++);
+				if ((extra & 0xFC00) == 0xDC00) { // low surrogate
+					output.push(((value & 0x3FF) << 10) + (extra & 0x3FF) + 0x10000);
+				} else {
+					// unmatched surrogate; only append this code unit, in case the next
+					// code unit is the high surrogate of a surrogate pair
+					output.push(value);
+					counter--;
+				}
+			} else {
+				output.push(value);
+			}
+		}
+		return output;
+	}
+
+	/**
+	 * Creates a string based on an array of numeric code points.
+	 * @see `punycode.ucs2.decode`
+	 * @memberOf punycode.ucs2
+	 * @name encode
+	 * @param {Array} codePoints The array of numeric code points.
+	 * @returns {String} The new Unicode string (UCS-2).
+	 */
+	function ucs2encode(array) {
+		return map(array, function(value) {
+			var output = '';
+			if (value > 0xFFFF) {
+				value -= 0x10000;
+				output += stringFromCharCode(value >>> 10 & 0x3FF | 0xD800);
+				value = 0xDC00 | value & 0x3FF;
+			}
+			output += stringFromCharCode(value);
+			return output;
+		}).join('');
+	}
+
+	/**
+	 * Converts a basic code point into a digit/integer.
+	 * @see `digitToBasic()`
+	 * @private
+	 * @param {Number} codePoint The basic numeric code point value.
+	 * @returns {Number} The numeric value of a basic code point (for use in
+	 * representing integers) in the range `0` to `base - 1`, or `base` if
+	 * the code point does not represent a value.
+	 */
+	function basicToDigit(codePoint) {
+		if (codePoint - 48 < 10) {
+			return codePoint - 22;
+		}
+		if (codePoint - 65 < 26) {
+			return codePoint - 65;
+		}
+		if (codePoint - 97 < 26) {
+			return codePoint - 97;
+		}
+		return base;
+	}
+
+	/**
+	 * Converts a digit/integer into a basic code point.
+	 * @see `basicToDigit()`
+	 * @private
+	 * @param {Number} digit The numeric value of a basic code point.
+	 * @returns {Number} The basic code point whose value (when used for
+	 * representing integers) is `digit`, which needs to be in the range
+	 * `0` to `base - 1`. If `flag` is non-zero, the uppercase form is
+	 * used; else, the lowercase form is used. The behavior is undefined
+	 * if `flag` is non-zero and `digit` has no uppercase form.
+	 */
+	function digitToBasic(digit, flag) {
+		//  0..25 map to ASCII a..z or A..Z
+		// 26..35 map to ASCII 0..9
+		return digit + 22 + 75 * (digit < 26) - ((flag != 0) << 5);
+	}
+
+	/**
+	 * Bias adaptation function as per section 3.4 of RFC 3492.
+	 * https://tools.ietf.org/html/rfc3492#section-3.4
+	 * @private
+	 */
+	function adapt(delta, numPoints, firstTime) {
+		var k = 0;
+		delta = firstTime ? floor(delta / damp) : delta >> 1;
+		delta += floor(delta / numPoints);
+		for (/* no initialization */; delta > baseMinusTMin * tMax >> 1; k += base) {
+			delta = floor(delta / baseMinusTMin);
+		}
+		return floor(k + (baseMinusTMin + 1) * delta / (delta + skew));
+	}
+
+	/**
+	 * Converts a Punycode string of ASCII-only symbols to a string of Unicode
+	 * symbols.
+	 * @memberOf punycode
+	 * @param {String} input The Punycode string of ASCII-only symbols.
+	 * @returns {String} The resulting string of Unicode symbols.
+	 */
+	function decode(input) {
+		// Don't use UCS-2
+		var output = [],
+		    inputLength = input.length,
+		    out,
+		    i = 0,
+		    n = initialN,
+		    bias = initialBias,
+		    basic,
+		    j,
+		    index,
+		    oldi,
+		    w,
+		    k,
+		    digit,
+		    t,
+		    /** Cached calculation results */
+		    baseMinusT;
+
+		// Handle the basic code points: let `basic` be the number of input code
+		// points before the last delimiter, or `0` if there is none, then copy
+		// the first basic code points to the output.
+
+		basic = input.lastIndexOf(delimiter);
+		if (basic < 0) {
+			basic = 0;
+		}
+
+		for (j = 0; j < basic; ++j) {
+			// if it's not a basic code point
+			if (input.charCodeAt(j) >= 0x80) {
+				error('not-basic');
+			}
+			output.push(input.charCodeAt(j));
+		}
+
+		// Main decoding loop: start just after the last delimiter if any basic code
+		// points were copied; start at the beginning otherwise.
+
+		for (index = basic > 0 ? basic + 1 : 0; index < inputLength; /* no final expression */) {
+
+			// `index` is the index of the next character to be consumed.
+			// Decode a generalized variable-length integer into `delta`,
+			// which gets added to `i`. The overflow checking is easier
+			// if we increase `i` as we go, then subtract off its starting
+			// value at the end to obtain `delta`.
+			for (oldi = i, w = 1, k = base; /* no condition */; k += base) {
+
+				if (index >= inputLength) {
+					error('invalid-input');
+				}
+
+				digit = basicToDigit(input.charCodeAt(index++));
+
+				if (digit >= base || digit > floor((maxInt - i) / w)) {
+					error('overflow');
+				}
+
+				i += digit * w;
+				t = k <= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
+
+				if (digit < t) {
+					break;
+				}
+
+				baseMinusT = base - t;
+				if (w > floor(maxInt / baseMinusT)) {
+					error('overflow');
+				}
+
+				w *= baseMinusT;
+
+			}
+
+			out = output.length + 1;
+			bias = adapt(i - oldi, out, oldi == 0);
+
+			// `i` was supposed to wrap around from `out` to `0`,
+			// incrementing `n` each time, so we'll fix that now:
+			if (floor(i / out) > maxInt - n) {
+				error('overflow');
+			}
+
+			n += floor(i / out);
+			i %= out;
+
+			// Insert `n` at position `i` of the output
+			output.splice(i++, 0, n);
+
+		}
+
+		return ucs2encode(output);
+	}
+
+	/**
+	 * Converts a string of Unicode symbols (e.g. a domain name label) to a
+	 * Punycode string of ASCII-only symbols.
+	 * @memberOf punycode
+	 * @param {String} input The string of Unicode symbols.
+	 * @returns {String} The resulting Punycode string of ASCII-only symbols.
+	 */
+	function encode(input) {
+		var n,
+		    delta,
+		    handledCPCount,
+		    basicLength,
+		    bias,
+		    j,
+		    m,
+		    q,
+		    k,
+		    t,
+		    currentValue,
+		    output = [],
+		    /** `inputLength` will hold the number of code points in `input`. */
+		    inputLength,
+		    /** Cached calculation results */
+		    handledCPCountPlusOne,
+		    baseMinusT,
+		    qMinusT;
+
+		// Convert the input in UCS-2 to Unicode
+		input = ucs2decode(input);
+
+		// Cache the length
+		inputLength = input.length;
+
+		// Initialize the state
+		n = initialN;
+		delta = 0;
+		bias = initialBias;
+
+		// Handle the basic code points
+		for (j = 0; j < inputLength; ++j) {
+			currentValue = input[j];
+			if (currentValue < 0x80) {
+				output.push(stringFromCharCode(currentValue));
+			}
+		}
+
+		handledCPCount = basicLength = output.length;
+
+		// `handledCPCount` is the number of code points that have been handled;
+		// `basicLength` is the number of basic code points.
+
+		// Finish the basic string - if it is not empty - with a delimiter
+		if (basicLength) {
+			output.push(delimiter);
+		}
+
+		// Main encoding loop:
+		while (handledCPCount < inputLength) {
+
+			// All non-basic code points < n have been handled already. Find the next
+			// larger one:
+			for (m = maxInt, j = 0; j < inputLength; ++j) {
+				currentValue = input[j];
+				if (currentValue >= n && currentValue < m) {
+					m = currentValue;
+				}
+			}
+
+			// Increase `delta` enough to advance the decoder's <n,i> state to <m,0>,
+			// but guard against overflow
+			handledCPCountPlusOne = handledCPCount + 1;
+			if (m - n > floor((maxInt - delta) / handledCPCountPlusOne)) {
+				error('overflow');
+			}
+
+			delta += (m - n) * handledCPCountPlusOne;
+			n = m;
+
+			for (j = 0; j < inputLength; ++j) {
+				currentValue = input[j];
+
+				if (currentValue < n && ++delta > maxInt) {
+					error('overflow');
+				}
+
+				if (currentValue == n) {
+					// Represent delta as a generalized variable-length integer
+					for (q = delta, k = base; /* no condition */; k += base) {
+						t = k <= bias ? tMin : (k >= bias + tMax ? tMax : k - bias);
+						if (q < t) {
+							break;
+						}
+						qMinusT = q - t;
+						baseMinusT = base - t;
+						output.push(
+							stringFromCharCode(digitToBasic(t + qMinusT % baseMinusT, 0))
+						);
+						q = floor(qMinusT / baseMinusT);
+					}
+
+					output.push(stringFromCharCode(digitToBasic(q, 0)));
+					bias = adapt(delta, handledCPCountPlusOne, handledCPCount == basicLength);
+					delta = 0;
+					++handledCPCount;
+				}
+			}
+
+			++delta;
+			++n;
+
+		}
+		return output.join('');
+	}
+
+	/**
+	 * Converts a Punycode string representing a domain name or an email address
+	 * to Unicode. Only the Punycoded parts of the input will be converted, i.e.
+	 * it doesn't matter if you call it on a string that has already been
+	 * converted to Unicode.
+	 * @memberOf punycode
+	 * @param {String} input The Punycoded domain name or email address to
+	 * convert to Unicode.
+	 * @returns {String} The Unicode representation of the given Punycode
+	 * string.
+	 */
+	function toUnicode(input) {
+		return mapDomain(input, function(string) {
+			return regexPunycode.test(string)
+				? decode(string.slice(4).toLowerCase())
+				: string;
+		});
+	}
+
+	/**
+	 * Converts a Unicode string representing a domain name or an email address to
+	 * Punycode. Only the non-ASCII parts of the domain name will be converted,
+	 * i.e. it doesn't matter if you call it with a domain that's already in
+	 * ASCII.
+	 * @memberOf punycode
+	 * @param {String} input The domain name or email address to convert, as a
+	 * Unicode string.
+	 * @returns {String} The Punycode representation of the given domain name or
+	 * email address.
+	 */
+	function toASCII(input) {
+		return mapDomain(input, function(string) {
+			return regexNonASCII.test(string)
+				? 'xn--' + encode(string)
+				: string;
+		});
+	}
+
+	/*--------------------------------------------------------------------------*/
+
+	/** Define the public API */
+	punycode = {
+		/**
+		 * A string representing the current Punycode.js version number.
+		 * @memberOf punycode
+		 * @type String
+		 */
+		'version': '1.4.1',
+		/**
+		 * An object of methods to convert from JavaScript's internal character
+		 * representation (UCS-2) to Unicode code points, and back.
+		 * @see <https://mathiasbynens.be/notes/javascript-encoding>
+		 * @memberOf punycode
+		 * @type Object
+		 */
+		'ucs2': {
+			'decode': ucs2decode,
+			'encode': ucs2encode
+		},
+		'decode': decode,
+		'encode': encode,
+		'toASCII': toASCII,
+		'toUnicode': toUnicode
+	};
+
+	/** Expose `punycode` */
+	// Some AMD build optimizers, like r.js, check for specific condition patterns
+	// like the following:
+	if (
+		typeof define == 'function' &&
+		typeof define.amd == 'object' &&
+		define.amd
+	) {
+		define('punycode', function() {
+			return punycode;
+		});
+	} else if (freeExports && freeModule) {
+		if (module.exports == freeExports) {
+			// in Node.js, io.js, or RingoJS v0.8.0+
+			freeModule.exports = punycode;
+		} else {
+			// in Narwhal or RingoJS v0.7.0-
+			for (key in punycode) {
+				punycode.hasOwnProperty(key) && (freeExports[key] = punycode[key]);
+			}
+		}
+	} else {
+		// in Rhino or a web browser
+		root.punycode = punycode;
+	}
+
+}(this));
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],56:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+'use strict';
+
+// If obj.hasOwnProperty has been overridden, then calling
+// obj.hasOwnProperty(prop) will break.
+// See: https://github.com/joyent/node/issues/1707
+function hasOwnProperty(obj, prop) {
+  return Object.prototype.hasOwnProperty.call(obj, prop);
+}
+
+module.exports = function(qs, sep, eq, options) {
+  sep = sep || '&';
+  eq = eq || '=';
+  var obj = {};
+
+  if (typeof qs !== 'string' || qs.length === 0) {
+    return obj;
+  }
+
+  var regexp = /\+/g;
+  qs = qs.split(sep);
+
+  var maxKeys = 1000;
+  if (options && typeof options.maxKeys === 'number') {
+    maxKeys = options.maxKeys;
+  }
+
+  var len = qs.length;
+  // maxKeys <= 0 means that we should not limit keys count
+  if (maxKeys > 0 && len > maxKeys) {
+    len = maxKeys;
+  }
+
+  for (var i = 0; i < len; ++i) {
+    var x = qs[i].replace(regexp, '%20'),
+        idx = x.indexOf(eq),
+        kstr, vstr, k, v;
+
+    if (idx >= 0) {
+      kstr = x.substr(0, idx);
+      vstr = x.substr(idx + 1);
+    } else {
+      kstr = x;
+      vstr = '';
+    }
+
+    k = decodeURIComponent(kstr);
+    v = decodeURIComponent(vstr);
+
+    if (!hasOwnProperty(obj, k)) {
+      obj[k] = v;
+    } else if (isArray(obj[k])) {
+      obj[k].push(v);
+    } else {
+      obj[k] = [obj[k], v];
+    }
+  }
+
+  return obj;
+};
+
+var isArray = Array.isArray || function (xs) {
+  return Object.prototype.toString.call(xs) === '[object Array]';
+};
+
+},{}],57:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+'use strict';
+
+var stringifyPrimitive = function(v) {
+  switch (typeof v) {
+    case 'string':
+      return v;
+
+    case 'boolean':
+      return v ? 'true' : 'false';
+
+    case 'number':
+      return isFinite(v) ? v : '';
+
+    default:
+      return '';
+  }
+};
+
+module.exports = function(obj, sep, eq, name) {
+  sep = sep || '&';
+  eq = eq || '=';
+  if (obj === null) {
+    obj = undefined;
+  }
+
+  if (typeof obj === 'object') {
+    return map(objectKeys(obj), function(k) {
+      var ks = encodeURIComponent(stringifyPrimitive(k)) + eq;
+      if (isArray(obj[k])) {
+        return map(obj[k], function(v) {
+          return ks + encodeURIComponent(stringifyPrimitive(v));
+        }).join(sep);
+      } else {
+        return ks + encodeURIComponent(stringifyPrimitive(obj[k]));
+      }
+    }).join(sep);
+
+  }
+
+  if (!name) return '';
+  return encodeURIComponent(stringifyPrimitive(name)) + eq +
+         encodeURIComponent(stringifyPrimitive(obj));
+};
+
+var isArray = Array.isArray || function (xs) {
+  return Object.prototype.toString.call(xs) === '[object Array]';
+};
+
+function map (xs, f) {
+  if (xs.map) return xs.map(f);
+  var res = [];
+  for (var i = 0; i < xs.length; i++) {
+    res.push(f(xs[i], i));
+  }
+  return res;
+}
+
+var objectKeys = Object.keys || function (obj) {
+  var res = [];
+  for (var key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) res.push(key);
+  }
+  return res;
+};
+
+},{}],58:[function(require,module,exports){
+'use strict';
+
+exports.decode = exports.parse = require('./decode');
+exports.encode = exports.stringify = require('./encode');
+
+},{"./decode":56,"./encode":57}],59:[function(require,module,exports){
 module.exports = require('./lib/_stream_duplex.js');
 
-},{"./lib/_stream_duplex.js":48}],48:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":60}],60:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -9481,7 +11530,7 @@ function forEach(xs, f) {
     f(xs[i], i);
   }
 }
-},{"./_stream_readable":50,"./_stream_writable":52,"core-util-is":39,"inherits":42,"process-nextick-args":45}],49:[function(require,module,exports){
+},{"./_stream_readable":62,"./_stream_writable":64,"core-util-is":45,"inherits":49,"process-nextick-args":53}],61:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -9529,7 +11578,7 @@ function PassThrough(options) {
 PassThrough.prototype._transform = function (chunk, encoding, cb) {
   cb(null, chunk);
 };
-},{"./_stream_transform":51,"core-util-is":39,"inherits":42}],50:[function(require,module,exports){
+},{"./_stream_transform":63,"core-util-is":45,"inherits":49}],62:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -10547,7 +12596,7 @@ function indexOf(xs, x) {
   return -1;
 }
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./_stream_duplex":48,"./internal/streams/BufferList":53,"./internal/streams/destroy":54,"./internal/streams/stream":55,"_process":46,"core-util-is":39,"events":40,"inherits":42,"isarray":44,"process-nextick-args":45,"safe-buffer":60,"string_decoder/":62,"util":37}],51:[function(require,module,exports){
+},{"./_stream_duplex":60,"./internal/streams/BufferList":65,"./internal/streams/destroy":66,"./internal/streams/stream":67,"_process":54,"core-util-is":45,"events":46,"inherits":49,"isarray":51,"process-nextick-args":53,"safe-buffer":72,"string_decoder/":78,"util":42}],63:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -10762,7 +12811,7 @@ function done(stream, er, data) {
 
   return stream.push(null);
 }
-},{"./_stream_duplex":48,"core-util-is":39,"inherits":42}],52:[function(require,module,exports){
+},{"./_stream_duplex":60,"core-util-is":45,"inherits":49}],64:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -11442,7 +13491,7 @@ Writable.prototype._destroy = function (err, cb) {
   cb(err);
 };
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./_stream_duplex":48,"./internal/streams/destroy":54,"./internal/streams/stream":55,"_process":46,"core-util-is":39,"inherits":42,"process-nextick-args":45,"safe-buffer":60,"util-deprecate":64}],53:[function(require,module,exports){
+},{"./_stream_duplex":60,"./internal/streams/destroy":66,"./internal/streams/stream":67,"_process":54,"core-util-is":45,"inherits":49,"process-nextick-args":53,"safe-buffer":72,"util-deprecate":83}],65:[function(require,module,exports){
 'use strict';
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
@@ -11522,7 +13571,7 @@ if (util && util.inspect && util.inspect.custom) {
     return this.constructor.name + ' ' + obj;
   };
 }
-},{"safe-buffer":60,"util":37}],54:[function(require,module,exports){
+},{"safe-buffer":72,"util":42}],66:[function(require,module,exports){
 'use strict';
 
 /*<replacement>*/
@@ -11597,13 +13646,13 @@ module.exports = {
   destroy: destroy,
   undestroy: undestroy
 };
-},{"process-nextick-args":45}],55:[function(require,module,exports){
+},{"process-nextick-args":53}],67:[function(require,module,exports){
 module.exports = require('events').EventEmitter;
 
-},{"events":40}],56:[function(require,module,exports){
+},{"events":46}],68:[function(require,module,exports){
 module.exports = require('./readable').PassThrough
 
-},{"./readable":57}],57:[function(require,module,exports){
+},{"./readable":69}],69:[function(require,module,exports){
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Stream = exports;
 exports.Readable = exports;
@@ -11612,13 +13661,13 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":48,"./lib/_stream_passthrough.js":49,"./lib/_stream_readable.js":50,"./lib/_stream_transform.js":51,"./lib/_stream_writable.js":52}],58:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":60,"./lib/_stream_passthrough.js":61,"./lib/_stream_readable.js":62,"./lib/_stream_transform.js":63,"./lib/_stream_writable.js":64}],70:[function(require,module,exports){
 module.exports = require('./readable').Transform
 
-},{"./readable":57}],59:[function(require,module,exports){
+},{"./readable":69}],71:[function(require,module,exports){
 module.exports = require('./lib/_stream_writable.js');
 
-},{"./lib/_stream_writable.js":52}],60:[function(require,module,exports){
+},{"./lib/_stream_writable.js":64}],72:[function(require,module,exports){
 /* eslint-disable node/no-deprecated-api */
 var buffer = require('buffer')
 var Buffer = buffer.Buffer
@@ -11682,7 +13731,7 @@ SafeBuffer.allocUnsafeSlow = function (size) {
   return buffer.SlowBuffer(size)
 }
 
-},{"buffer":38}],61:[function(require,module,exports){
+},{"buffer":43}],73:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -11811,7 +13860,718 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":40,"inherits":42,"readable-stream/duplex.js":47,"readable-stream/passthrough.js":56,"readable-stream/readable.js":57,"readable-stream/transform.js":58,"readable-stream/writable.js":59}],62:[function(require,module,exports){
+},{"events":46,"inherits":49,"readable-stream/duplex.js":59,"readable-stream/passthrough.js":68,"readable-stream/readable.js":69,"readable-stream/transform.js":70,"readable-stream/writable.js":71}],74:[function(require,module,exports){
+(function (global){
+var ClientRequest = require('./lib/request')
+var IncomingMessage = require('./lib/response')
+var extend = require('xtend')
+var statusCodes = require('builtin-status-codes')
+var url = require('url')
+
+var http = exports
+
+http.request = function (opts, cb) {
+	if (typeof opts === 'string')
+		opts = url.parse(opts)
+	else
+		opts = extend(opts)
+
+	// Normally, the page is loaded from http or https, so not specifying a protocol
+	// will result in a (valid) protocol-relative url. However, this won't work if
+	// the protocol is something else, like 'file:'
+	var defaultProtocol = global.location.protocol.search(/^https?:$/) === -1 ? 'http:' : ''
+
+	var protocol = opts.protocol || defaultProtocol
+	var host = opts.hostname || opts.host
+	var port = opts.port
+	var path = opts.path || '/'
+
+	// Necessary for IPv6 addresses
+	if (host && host.indexOf(':') !== -1)
+		host = '[' + host + ']'
+
+	// This may be a relative url. The browser should always be able to interpret it correctly.
+	opts.url = (host ? (protocol + '//' + host) : '') + (port ? ':' + port : '') + path
+	opts.method = (opts.method || 'GET').toUpperCase()
+	opts.headers = opts.headers || {}
+
+	// Also valid opts.auth, opts.mode
+
+	var req = new ClientRequest(opts)
+	if (cb)
+		req.on('response', cb)
+	return req
+}
+
+http.get = function get (opts, cb) {
+	var req = http.request(opts, cb)
+	req.end()
+	return req
+}
+
+http.ClientRequest = ClientRequest
+http.IncomingMessage = IncomingMessage
+
+http.Agent = function () {}
+http.Agent.defaultMaxSockets = 4
+
+http.STATUS_CODES = statusCodes
+
+http.METHODS = [
+	'CHECKOUT',
+	'CONNECT',
+	'COPY',
+	'DELETE',
+	'GET',
+	'HEAD',
+	'LOCK',
+	'M-SEARCH',
+	'MERGE',
+	'MKACTIVITY',
+	'MKCOL',
+	'MOVE',
+	'NOTIFY',
+	'OPTIONS',
+	'PATCH',
+	'POST',
+	'PROPFIND',
+	'PROPPATCH',
+	'PURGE',
+	'PUT',
+	'REPORT',
+	'SEARCH',
+	'SUBSCRIBE',
+	'TRACE',
+	'UNLOCK',
+	'UNSUBSCRIBE'
+]
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"./lib/request":76,"./lib/response":77,"builtin-status-codes":44,"url":81,"xtend":84}],75:[function(require,module,exports){
+(function (global){
+exports.fetch = isFunction(global.fetch) && isFunction(global.ReadableStream)
+
+exports.writableStream = isFunction(global.WritableStream)
+
+exports.abortController = isFunction(global.AbortController)
+
+exports.blobConstructor = false
+try {
+	new Blob([new ArrayBuffer(1)])
+	exports.blobConstructor = true
+} catch (e) {}
+
+// The xhr request to example.com may violate some restrictive CSP configurations,
+// so if we're running in a browser that supports `fetch`, avoid calling getXHR()
+// and assume support for certain features below.
+var xhr
+function getXHR () {
+	// Cache the xhr value
+	if (xhr !== undefined) return xhr
+
+	if (global.XMLHttpRequest) {
+		xhr = new global.XMLHttpRequest()
+		// If XDomainRequest is available (ie only, where xhr might not work
+		// cross domain), use the page location. Otherwise use example.com
+		// Note: this doesn't actually make an http request.
+		try {
+			xhr.open('GET', global.XDomainRequest ? '/' : 'https://example.com')
+		} catch(e) {
+			xhr = null
+		}
+	} else {
+		// Service workers don't have XHR
+		xhr = null
+	}
+	return xhr
+}
+
+function checkTypeSupport (type) {
+	var xhr = getXHR()
+	if (!xhr) return false
+	try {
+		xhr.responseType = type
+		return xhr.responseType === type
+	} catch (e) {}
+	return false
+}
+
+// For some strange reason, Safari 7.0 reports typeof global.ArrayBuffer === 'object'.
+// Safari 7.1 appears to have fixed this bug.
+var haveArrayBuffer = typeof global.ArrayBuffer !== 'undefined'
+var haveSlice = haveArrayBuffer && isFunction(global.ArrayBuffer.prototype.slice)
+
+// If fetch is supported, then arraybuffer will be supported too. Skip calling
+// checkTypeSupport(), since that calls getXHR().
+exports.arraybuffer = exports.fetch || (haveArrayBuffer && checkTypeSupport('arraybuffer'))
+
+// These next two tests unavoidably show warnings in Chrome. Since fetch will always
+// be used if it's available, just return false for these to avoid the warnings.
+exports.msstream = !exports.fetch && haveSlice && checkTypeSupport('ms-stream')
+exports.mozchunkedarraybuffer = !exports.fetch && haveArrayBuffer &&
+	checkTypeSupport('moz-chunked-arraybuffer')
+
+// If fetch is supported, then overrideMimeType will be supported too. Skip calling
+// getXHR().
+exports.overrideMimeType = exports.fetch || (getXHR() ? isFunction(getXHR().overrideMimeType) : false)
+
+exports.vbArray = isFunction(global.VBArray)
+
+function isFunction (value) {
+	return typeof value === 'function'
+}
+
+xhr = null // Help gc
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],76:[function(require,module,exports){
+(function (process,global,Buffer){
+var capability = require('./capability')
+var inherits = require('inherits')
+var response = require('./response')
+var stream = require('readable-stream')
+var toArrayBuffer = require('to-arraybuffer')
+
+var IncomingMessage = response.IncomingMessage
+var rStates = response.readyStates
+
+function decideMode (preferBinary, useFetch) {
+	if (capability.fetch && useFetch) {
+		return 'fetch'
+	} else if (capability.mozchunkedarraybuffer) {
+		return 'moz-chunked-arraybuffer'
+	} else if (capability.msstream) {
+		return 'ms-stream'
+	} else if (capability.arraybuffer && preferBinary) {
+		return 'arraybuffer'
+	} else if (capability.vbArray && preferBinary) {
+		return 'text:vbarray'
+	} else {
+		return 'text'
+	}
+}
+
+var ClientRequest = module.exports = function (opts) {
+	var self = this
+	stream.Writable.call(self)
+
+	self._opts = opts
+	self._body = []
+	self._headers = {}
+	if (opts.auth)
+		self.setHeader('Authorization', 'Basic ' + new Buffer(opts.auth).toString('base64'))
+	Object.keys(opts.headers).forEach(function (name) {
+		self.setHeader(name, opts.headers[name])
+	})
+
+	var preferBinary
+	var useFetch = true
+	if (opts.mode === 'disable-fetch' || ('requestTimeout' in opts && !capability.abortController)) {
+		// If the use of XHR should be preferred. Not typically needed.
+		useFetch = false
+		preferBinary = true
+	} else if (opts.mode === 'prefer-streaming') {
+		// If streaming is a high priority but binary compatibility and
+		// the accuracy of the 'content-type' header aren't
+		preferBinary = false
+	} else if (opts.mode === 'allow-wrong-content-type') {
+		// If streaming is more important than preserving the 'content-type' header
+		preferBinary = !capability.overrideMimeType
+	} else if (!opts.mode || opts.mode === 'default' || opts.mode === 'prefer-fast') {
+		// Use binary if text streaming may corrupt data or the content-type header, or for speed
+		preferBinary = true
+	} else {
+		throw new Error('Invalid value for opts.mode')
+	}
+	self._mode = decideMode(preferBinary, useFetch)
+
+	self.on('finish', function () {
+		self._onFinish()
+	})
+}
+
+inherits(ClientRequest, stream.Writable)
+
+ClientRequest.prototype.setHeader = function (name, value) {
+	var self = this
+	var lowerName = name.toLowerCase()
+	// This check is not necessary, but it prevents warnings from browsers about setting unsafe
+	// headers. To be honest I'm not entirely sure hiding these warnings is a good thing, but
+	// http-browserify did it, so I will too.
+	if (unsafeHeaders.indexOf(lowerName) !== -1)
+		return
+
+	self._headers[lowerName] = {
+		name: name,
+		value: value
+	}
+}
+
+ClientRequest.prototype.getHeader = function (name) {
+	var header = this._headers[name.toLowerCase()]
+	if (header)
+		return header.value
+	return null
+}
+
+ClientRequest.prototype.removeHeader = function (name) {
+	var self = this
+	delete self._headers[name.toLowerCase()]
+}
+
+ClientRequest.prototype._onFinish = function () {
+	var self = this
+
+	if (self._destroyed)
+		return
+	var opts = self._opts
+
+	var headersObj = self._headers
+	var body = null
+	if (opts.method !== 'GET' && opts.method !== 'HEAD') {
+		if (capability.arraybuffer) {
+			body = toArrayBuffer(Buffer.concat(self._body))
+		} else if (capability.blobConstructor) {
+			body = new global.Blob(self._body.map(function (buffer) {
+				return toArrayBuffer(buffer)
+			}), {
+				type: (headersObj['content-type'] || {}).value || ''
+			})
+		} else {
+			// get utf8 string
+			body = Buffer.concat(self._body).toString()
+		}
+	}
+
+	// create flattened list of headers
+	var headersList = []
+	Object.keys(headersObj).forEach(function (keyName) {
+		var name = headersObj[keyName].name
+		var value = headersObj[keyName].value
+		if (Array.isArray(value)) {
+			value.forEach(function (v) {
+				headersList.push([name, v])
+			})
+		} else {
+			headersList.push([name, value])
+		}
+	})
+
+	if (self._mode === 'fetch') {
+		var signal = null
+		if (capability.abortController) {
+			var controller = new AbortController()
+			signal = controller.signal
+			self._fetchAbortController = controller
+
+			if ('requestTimeout' in opts && opts.requestTimeout !== 0) {
+				global.setTimeout(function () {
+					self.emit('requestTimeout')
+					if (self._fetchAbortController)
+						self._fetchAbortController.abort()
+				}, opts.requestTimeout)
+			}
+		}
+
+		global.fetch(self._opts.url, {
+			method: self._opts.method,
+			headers: headersList,
+			body: body || undefined,
+			mode: 'cors',
+			credentials: opts.withCredentials ? 'include' : 'same-origin',
+			signal: signal
+		}).then(function (response) {
+			self._fetchResponse = response
+			self._connect()
+		}, function (reason) {
+			self.emit('error', reason)
+		})
+	} else {
+		var xhr = self._xhr = new global.XMLHttpRequest()
+		try {
+			xhr.open(self._opts.method, self._opts.url, true)
+		} catch (err) {
+			process.nextTick(function () {
+				self.emit('error', err)
+			})
+			return
+		}
+
+		// Can't set responseType on really old browsers
+		if ('responseType' in xhr)
+			xhr.responseType = self._mode.split(':')[0]
+
+		if ('withCredentials' in xhr)
+			xhr.withCredentials = !!opts.withCredentials
+
+		if (self._mode === 'text' && 'overrideMimeType' in xhr)
+			xhr.overrideMimeType('text/plain; charset=x-user-defined')
+
+		if ('requestTimeout' in opts) {
+			xhr.timeout = opts.requestTimeout
+			xhr.ontimeout = function () {
+				self.emit('requestTimeout')
+			}
+		}
+
+		headersList.forEach(function (header) {
+			xhr.setRequestHeader(header[0], header[1])
+		})
+
+		self._response = null
+		xhr.onreadystatechange = function () {
+			switch (xhr.readyState) {
+				case rStates.LOADING:
+				case rStates.DONE:
+					self._onXHRProgress()
+					break
+			}
+		}
+		// Necessary for streaming in Firefox, since xhr.response is ONLY defined
+		// in onprogress, not in onreadystatechange with xhr.readyState = 3
+		if (self._mode === 'moz-chunked-arraybuffer') {
+			xhr.onprogress = function () {
+				self._onXHRProgress()
+			}
+		}
+
+		xhr.onerror = function () {
+			if (self._destroyed)
+				return
+			self.emit('error', new Error('XHR error'))
+		}
+
+		try {
+			xhr.send(body)
+		} catch (err) {
+			process.nextTick(function () {
+				self.emit('error', err)
+			})
+			return
+		}
+	}
+}
+
+/**
+ * Checks if xhr.status is readable and non-zero, indicating no error.
+ * Even though the spec says it should be available in readyState 3,
+ * accessing it throws an exception in IE8
+ */
+function statusValid (xhr) {
+	try {
+		var status = xhr.status
+		return (status !== null && status !== 0)
+	} catch (e) {
+		return false
+	}
+}
+
+ClientRequest.prototype._onXHRProgress = function () {
+	var self = this
+
+	if (!statusValid(self._xhr) || self._destroyed)
+		return
+
+	if (!self._response)
+		self._connect()
+
+	self._response._onXHRProgress()
+}
+
+ClientRequest.prototype._connect = function () {
+	var self = this
+
+	if (self._destroyed)
+		return
+
+	self._response = new IncomingMessage(self._xhr, self._fetchResponse, self._mode)
+	self._response.on('error', function(err) {
+		self.emit('error', err)
+	})
+
+	self.emit('response', self._response)
+}
+
+ClientRequest.prototype._write = function (chunk, encoding, cb) {
+	var self = this
+
+	self._body.push(chunk)
+	cb()
+}
+
+ClientRequest.prototype.abort = ClientRequest.prototype.destroy = function () {
+	var self = this
+	self._destroyed = true
+	if (self._response)
+		self._response._destroyed = true
+	if (self._xhr)
+		self._xhr.abort()
+	else if (self._fetchAbortController)
+		self._fetchAbortController.abort()
+}
+
+ClientRequest.prototype.end = function (data, encoding, cb) {
+	var self = this
+	if (typeof data === 'function') {
+		cb = data
+		data = undefined
+	}
+
+	stream.Writable.prototype.end.call(self, data, encoding, cb)
+}
+
+ClientRequest.prototype.flushHeaders = function () {}
+ClientRequest.prototype.setTimeout = function () {}
+ClientRequest.prototype.setNoDelay = function () {}
+ClientRequest.prototype.setSocketKeepAlive = function () {}
+
+// Taken from http://www.w3.org/TR/XMLHttpRequest/#the-setrequestheader%28%29-method
+var unsafeHeaders = [
+	'accept-charset',
+	'accept-encoding',
+	'access-control-request-headers',
+	'access-control-request-method',
+	'connection',
+	'content-length',
+	'cookie',
+	'cookie2',
+	'date',
+	'dnt',
+	'expect',
+	'host',
+	'keep-alive',
+	'origin',
+	'referer',
+	'te',
+	'trailer',
+	'transfer-encoding',
+	'upgrade',
+	'user-agent',
+	'via'
+]
+
+}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
+},{"./capability":75,"./response":77,"_process":54,"buffer":43,"inherits":49,"readable-stream":69,"to-arraybuffer":80}],77:[function(require,module,exports){
+(function (process,global,Buffer){
+var capability = require('./capability')
+var inherits = require('inherits')
+var stream = require('readable-stream')
+
+var rStates = exports.readyStates = {
+	UNSENT: 0,
+	OPENED: 1,
+	HEADERS_RECEIVED: 2,
+	LOADING: 3,
+	DONE: 4
+}
+
+var IncomingMessage = exports.IncomingMessage = function (xhr, response, mode) {
+	var self = this
+	stream.Readable.call(self)
+
+	self._mode = mode
+	self.headers = {}
+	self.rawHeaders = []
+	self.trailers = {}
+	self.rawTrailers = []
+
+	// Fake the 'close' event, but only once 'end' fires
+	self.on('end', function () {
+		// The nextTick is necessary to prevent the 'request' module from causing an infinite loop
+		process.nextTick(function () {
+			self.emit('close')
+		})
+	})
+
+	if (mode === 'fetch') {
+		self._fetchResponse = response
+
+		self.url = response.url
+		self.statusCode = response.status
+		self.statusMessage = response.statusText
+		
+		response.headers.forEach(function (header, key){
+			self.headers[key.toLowerCase()] = header
+			self.rawHeaders.push(key, header)
+		})
+
+		if (capability.writableStream) {
+			var writable = new WritableStream({
+				write: function (chunk) {
+					return new Promise(function (resolve, reject) {
+						if (self._destroyed) {
+							return
+						} else if(self.push(new Buffer(chunk))) {
+							resolve()
+						} else {
+							self._resumeFetch = resolve
+						}
+					})
+				},
+				close: function () {
+					if (!self._destroyed)
+						self.push(null)
+				},
+				abort: function (err) {
+					if (!self._destroyed)
+						self.emit('error', err)
+				}
+			})
+
+			try {
+				response.body.pipeTo(writable)
+				return
+			} catch (e) {} // pipeTo method isn't defined. Can't find a better way to feature test this
+		}
+		// fallback for when writableStream or pipeTo aren't available
+		var reader = response.body.getReader()
+		function read () {
+			reader.read().then(function (result) {
+				if (self._destroyed)
+					return
+				if (result.done) {
+					self.push(null)
+					return
+				}
+				self.push(new Buffer(result.value))
+				read()
+			}).catch(function(err) {
+				if (!self._destroyed)
+					self.emit('error', err)
+			})
+		}
+		read()
+	} else {
+		self._xhr = xhr
+		self._pos = 0
+
+		self.url = xhr.responseURL
+		self.statusCode = xhr.status
+		self.statusMessage = xhr.statusText
+		var headers = xhr.getAllResponseHeaders().split(/\r?\n/)
+		headers.forEach(function (header) {
+			var matches = header.match(/^([^:]+):\s*(.*)/)
+			if (matches) {
+				var key = matches[1].toLowerCase()
+				if (key === 'set-cookie') {
+					if (self.headers[key] === undefined) {
+						self.headers[key] = []
+					}
+					self.headers[key].push(matches[2])
+				} else if (self.headers[key] !== undefined) {
+					self.headers[key] += ', ' + matches[2]
+				} else {
+					self.headers[key] = matches[2]
+				}
+				self.rawHeaders.push(matches[1], matches[2])
+			}
+		})
+
+		self._charset = 'x-user-defined'
+		if (!capability.overrideMimeType) {
+			var mimeType = self.rawHeaders['mime-type']
+			if (mimeType) {
+				var charsetMatch = mimeType.match(/;\s*charset=([^;])(;|$)/)
+				if (charsetMatch) {
+					self._charset = charsetMatch[1].toLowerCase()
+				}
+			}
+			if (!self._charset)
+				self._charset = 'utf-8' // best guess
+		}
+	}
+}
+
+inherits(IncomingMessage, stream.Readable)
+
+IncomingMessage.prototype._read = function () {
+	var self = this
+
+	var resolve = self._resumeFetch
+	if (resolve) {
+		self._resumeFetch = null
+		resolve()
+	}
+}
+
+IncomingMessage.prototype._onXHRProgress = function () {
+	var self = this
+
+	var xhr = self._xhr
+
+	var response = null
+	switch (self._mode) {
+		case 'text:vbarray': // For IE9
+			if (xhr.readyState !== rStates.DONE)
+				break
+			try {
+				// This fails in IE8
+				response = new global.VBArray(xhr.responseBody).toArray()
+			} catch (e) {}
+			if (response !== null) {
+				self.push(new Buffer(response))
+				break
+			}
+			// Falls through in IE8	
+		case 'text':
+			try { // This will fail when readyState = 3 in IE9. Switch mode and wait for readyState = 4
+				response = xhr.responseText
+			} catch (e) {
+				self._mode = 'text:vbarray'
+				break
+			}
+			if (response.length > self._pos) {
+				var newData = response.substr(self._pos)
+				if (self._charset === 'x-user-defined') {
+					var buffer = new Buffer(newData.length)
+					for (var i = 0; i < newData.length; i++)
+						buffer[i] = newData.charCodeAt(i) & 0xff
+
+					self.push(buffer)
+				} else {
+					self.push(newData, self._charset)
+				}
+				self._pos = response.length
+			}
+			break
+		case 'arraybuffer':
+			if (xhr.readyState !== rStates.DONE || !xhr.response)
+				break
+			response = xhr.response
+			self.push(new Buffer(new Uint8Array(response)))
+			break
+		case 'moz-chunked-arraybuffer': // take whole
+			response = xhr.response
+			if (xhr.readyState !== rStates.LOADING || !response)
+				break
+			self.push(new Buffer(new Uint8Array(response)))
+			break
+		case 'ms-stream':
+			response = xhr.response
+			if (xhr.readyState !== rStates.LOADING)
+				break
+			var reader = new global.MSStreamReader()
+			reader.onprogress = function () {
+				if (reader.result.byteLength > self._pos) {
+					self.push(new Buffer(new Uint8Array(reader.result.slice(self._pos))))
+					self._pos = reader.result.byteLength
+				}
+			}
+			reader.onload = function () {
+				self.push(null)
+			}
+			// reader.onerror = ??? // TODO: this
+			reader.readAsArrayBuffer(response)
+			break
+	}
+
+	// The ms-stream case handles end separately in reader.onload()
+	if (self._xhr.readyState === rStates.DONE && self._mode !== 'ms-stream') {
+		self.push(null)
+	}
+}
+
+}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
+},{"./capability":75,"_process":54,"buffer":43,"inherits":49,"readable-stream":69}],78:[function(require,module,exports){
 'use strict';
 
 var Buffer = require('safe-buffer').Buffer;
@@ -12084,7 +14844,7 @@ function simpleWrite(buf) {
 function simpleEnd(buf) {
   return buf && buf.length ? this.write(buf) : '';
 }
-},{"safe-buffer":60}],63:[function(require,module,exports){
+},{"safe-buffer":72}],79:[function(require,module,exports){
 var nextTick = require('process/browser.js').nextTick;
 var apply = Function.prototype.apply;
 var slice = Array.prototype.slice;
@@ -12161,7 +14921,788 @@ exports.setImmediate = typeof setImmediate === "function" ? setImmediate : funct
 exports.clearImmediate = typeof clearImmediate === "function" ? clearImmediate : function(id) {
   delete immediateIds[id];
 };
-},{"process/browser.js":46}],64:[function(require,module,exports){
+},{"process/browser.js":54}],80:[function(require,module,exports){
+var Buffer = require('buffer').Buffer
+
+module.exports = function (buf) {
+	// If the buffer is backed by a Uint8Array, a faster version will work
+	if (buf instanceof Uint8Array) {
+		// If the buffer isn't a subarray, return the underlying ArrayBuffer
+		if (buf.byteOffset === 0 && buf.byteLength === buf.buffer.byteLength) {
+			return buf.buffer
+		} else if (typeof buf.buffer.slice === 'function') {
+			// Otherwise we need to get a proper copy
+			return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+		}
+	}
+
+	if (Buffer.isBuffer(buf)) {
+		// This is the slow version that will work with any Buffer
+		// implementation (even in old browsers)
+		var arrayCopy = new Uint8Array(buf.length)
+		var len = buf.length
+		for (var i = 0; i < len; i++) {
+			arrayCopy[i] = buf[i]
+		}
+		return arrayCopy.buffer
+	} else {
+		throw new Error('Argument must be a Buffer')
+	}
+}
+
+},{"buffer":43}],81:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+'use strict';
+
+var punycode = require('punycode');
+var util = require('./util');
+
+exports.parse = urlParse;
+exports.resolve = urlResolve;
+exports.resolveObject = urlResolveObject;
+exports.format = urlFormat;
+
+exports.Url = Url;
+
+function Url() {
+  this.protocol = null;
+  this.slashes = null;
+  this.auth = null;
+  this.host = null;
+  this.port = null;
+  this.hostname = null;
+  this.hash = null;
+  this.search = null;
+  this.query = null;
+  this.pathname = null;
+  this.path = null;
+  this.href = null;
+}
+
+// Reference: RFC 3986, RFC 1808, RFC 2396
+
+// define these here so at least they only have to be
+// compiled once on the first module load.
+var protocolPattern = /^([a-z0-9.+-]+:)/i,
+    portPattern = /:[0-9]*$/,
+
+    // Special case for a simple path URL
+    simplePathPattern = /^(\/\/?(?!\/)[^\?\s]*)(\?[^\s]*)?$/,
+
+    // RFC 2396: characters reserved for delimiting URLs.
+    // We actually just auto-escape these.
+    delims = ['<', '>', '"', '`', ' ', '\r', '\n', '\t'],
+
+    // RFC 2396: characters not allowed for various reasons.
+    unwise = ['{', '}', '|', '\\', '^', '`'].concat(delims),
+
+    // Allowed by RFCs, but cause of XSS attacks.  Always escape these.
+    autoEscape = ['\''].concat(unwise),
+    // Characters that are never ever allowed in a hostname.
+    // Note that any invalid chars are also handled, but these
+    // are the ones that are *expected* to be seen, so we fast-path
+    // them.
+    nonHostChars = ['%', '/', '?', ';', '#'].concat(autoEscape),
+    hostEndingChars = ['/', '?', '#'],
+    hostnameMaxLen = 255,
+    hostnamePartPattern = /^[+a-z0-9A-Z_-]{0,63}$/,
+    hostnamePartStart = /^([+a-z0-9A-Z_-]{0,63})(.*)$/,
+    // protocols that can allow "unsafe" and "unwise" chars.
+    unsafeProtocol = {
+      'javascript': true,
+      'javascript:': true
+    },
+    // protocols that never have a hostname.
+    hostlessProtocol = {
+      'javascript': true,
+      'javascript:': true
+    },
+    // protocols that always contain a // bit.
+    slashedProtocol = {
+      'http': true,
+      'https': true,
+      'ftp': true,
+      'gopher': true,
+      'file': true,
+      'http:': true,
+      'https:': true,
+      'ftp:': true,
+      'gopher:': true,
+      'file:': true
+    },
+    querystring = require('querystring');
+
+function urlParse(url, parseQueryString, slashesDenoteHost) {
+  if (url && util.isObject(url) && url instanceof Url) return url;
+
+  var u = new Url;
+  u.parse(url, parseQueryString, slashesDenoteHost);
+  return u;
+}
+
+Url.prototype.parse = function(url, parseQueryString, slashesDenoteHost) {
+  if (!util.isString(url)) {
+    throw new TypeError("Parameter 'url' must be a string, not " + typeof url);
+  }
+
+  // Copy chrome, IE, opera backslash-handling behavior.
+  // Back slashes before the query string get converted to forward slashes
+  // See: https://code.google.com/p/chromium/issues/detail?id=25916
+  var queryIndex = url.indexOf('?'),
+      splitter =
+          (queryIndex !== -1 && queryIndex < url.indexOf('#')) ? '?' : '#',
+      uSplit = url.split(splitter),
+      slashRegex = /\\/g;
+  uSplit[0] = uSplit[0].replace(slashRegex, '/');
+  url = uSplit.join(splitter);
+
+  var rest = url;
+
+  // trim before proceeding.
+  // This is to support parse stuff like "  http://foo.com  \n"
+  rest = rest.trim();
+
+  if (!slashesDenoteHost && url.split('#').length === 1) {
+    // Try fast path regexp
+    var simplePath = simplePathPattern.exec(rest);
+    if (simplePath) {
+      this.path = rest;
+      this.href = rest;
+      this.pathname = simplePath[1];
+      if (simplePath[2]) {
+        this.search = simplePath[2];
+        if (parseQueryString) {
+          this.query = querystring.parse(this.search.substr(1));
+        } else {
+          this.query = this.search.substr(1);
+        }
+      } else if (parseQueryString) {
+        this.search = '';
+        this.query = {};
+      }
+      return this;
+    }
+  }
+
+  var proto = protocolPattern.exec(rest);
+  if (proto) {
+    proto = proto[0];
+    var lowerProto = proto.toLowerCase();
+    this.protocol = lowerProto;
+    rest = rest.substr(proto.length);
+  }
+
+  // figure out if it's got a host
+  // user@server is *always* interpreted as a hostname, and url
+  // resolution will treat //foo/bar as host=foo,path=bar because that's
+  // how the browser resolves relative URLs.
+  if (slashesDenoteHost || proto || rest.match(/^\/\/[^@\/]+@[^@\/]+/)) {
+    var slashes = rest.substr(0, 2) === '//';
+    if (slashes && !(proto && hostlessProtocol[proto])) {
+      rest = rest.substr(2);
+      this.slashes = true;
+    }
+  }
+
+  if (!hostlessProtocol[proto] &&
+      (slashes || (proto && !slashedProtocol[proto]))) {
+
+    // there's a hostname.
+    // the first instance of /, ?, ;, or # ends the host.
+    //
+    // If there is an @ in the hostname, then non-host chars *are* allowed
+    // to the left of the last @ sign, unless some host-ending character
+    // comes *before* the @-sign.
+    // URLs are obnoxious.
+    //
+    // ex:
+    // http://a@b@c/ => user:a@b host:c
+    // http://a@b?@c => user:a host:c path:/?@c
+
+    // v0.12 TODO(isaacs): This is not quite how Chrome does things.
+    // Review our test case against browsers more comprehensively.
+
+    // find the first instance of any hostEndingChars
+    var hostEnd = -1;
+    for (var i = 0; i < hostEndingChars.length; i++) {
+      var hec = rest.indexOf(hostEndingChars[i]);
+      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
+        hostEnd = hec;
+    }
+
+    // at this point, either we have an explicit point where the
+    // auth portion cannot go past, or the last @ char is the decider.
+    var auth, atSign;
+    if (hostEnd === -1) {
+      // atSign can be anywhere.
+      atSign = rest.lastIndexOf('@');
+    } else {
+      // atSign must be in auth portion.
+      // http://a@b/c@d => host:b auth:a path:/c@d
+      atSign = rest.lastIndexOf('@', hostEnd);
+    }
+
+    // Now we have a portion which is definitely the auth.
+    // Pull that off.
+    if (atSign !== -1) {
+      auth = rest.slice(0, atSign);
+      rest = rest.slice(atSign + 1);
+      this.auth = decodeURIComponent(auth);
+    }
+
+    // the host is the remaining to the left of the first non-host char
+    hostEnd = -1;
+    for (var i = 0; i < nonHostChars.length; i++) {
+      var hec = rest.indexOf(nonHostChars[i]);
+      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
+        hostEnd = hec;
+    }
+    // if we still have not hit it, then the entire thing is a host.
+    if (hostEnd === -1)
+      hostEnd = rest.length;
+
+    this.host = rest.slice(0, hostEnd);
+    rest = rest.slice(hostEnd);
+
+    // pull out port.
+    this.parseHost();
+
+    // we've indicated that there is a hostname,
+    // so even if it's empty, it has to be present.
+    this.hostname = this.hostname || '';
+
+    // if hostname begins with [ and ends with ]
+    // assume that it's an IPv6 address.
+    var ipv6Hostname = this.hostname[0] === '[' &&
+        this.hostname[this.hostname.length - 1] === ']';
+
+    // validate a little.
+    if (!ipv6Hostname) {
+      var hostparts = this.hostname.split(/\./);
+      for (var i = 0, l = hostparts.length; i < l; i++) {
+        var part = hostparts[i];
+        if (!part) continue;
+        if (!part.match(hostnamePartPattern)) {
+          var newpart = '';
+          for (var j = 0, k = part.length; j < k; j++) {
+            if (part.charCodeAt(j) > 127) {
+              // we replace non-ASCII char with a temporary placeholder
+              // we need this to make sure size of hostname is not
+              // broken by replacing non-ASCII by nothing
+              newpart += 'x';
+            } else {
+              newpart += part[j];
+            }
+          }
+          // we test again with ASCII char only
+          if (!newpart.match(hostnamePartPattern)) {
+            var validParts = hostparts.slice(0, i);
+            var notHost = hostparts.slice(i + 1);
+            var bit = part.match(hostnamePartStart);
+            if (bit) {
+              validParts.push(bit[1]);
+              notHost.unshift(bit[2]);
+            }
+            if (notHost.length) {
+              rest = '/' + notHost.join('.') + rest;
+            }
+            this.hostname = validParts.join('.');
+            break;
+          }
+        }
+      }
+    }
+
+    if (this.hostname.length > hostnameMaxLen) {
+      this.hostname = '';
+    } else {
+      // hostnames are always lower case.
+      this.hostname = this.hostname.toLowerCase();
+    }
+
+    if (!ipv6Hostname) {
+      // IDNA Support: Returns a punycoded representation of "domain".
+      // It only converts parts of the domain name that
+      // have non-ASCII characters, i.e. it doesn't matter if
+      // you call it with a domain that already is ASCII-only.
+      this.hostname = punycode.toASCII(this.hostname);
+    }
+
+    var p = this.port ? ':' + this.port : '';
+    var h = this.hostname || '';
+    this.host = h + p;
+    this.href += this.host;
+
+    // strip [ and ] from the hostname
+    // the host field still retains them, though
+    if (ipv6Hostname) {
+      this.hostname = this.hostname.substr(1, this.hostname.length - 2);
+      if (rest[0] !== '/') {
+        rest = '/' + rest;
+      }
+    }
+  }
+
+  // now rest is set to the post-host stuff.
+  // chop off any delim chars.
+  if (!unsafeProtocol[lowerProto]) {
+
+    // First, make 100% sure that any "autoEscape" chars get
+    // escaped, even if encodeURIComponent doesn't think they
+    // need to be.
+    for (var i = 0, l = autoEscape.length; i < l; i++) {
+      var ae = autoEscape[i];
+      if (rest.indexOf(ae) === -1)
+        continue;
+      var esc = encodeURIComponent(ae);
+      if (esc === ae) {
+        esc = escape(ae);
+      }
+      rest = rest.split(ae).join(esc);
+    }
+  }
+
+
+  // chop off from the tail first.
+  var hash = rest.indexOf('#');
+  if (hash !== -1) {
+    // got a fragment string.
+    this.hash = rest.substr(hash);
+    rest = rest.slice(0, hash);
+  }
+  var qm = rest.indexOf('?');
+  if (qm !== -1) {
+    this.search = rest.substr(qm);
+    this.query = rest.substr(qm + 1);
+    if (parseQueryString) {
+      this.query = querystring.parse(this.query);
+    }
+    rest = rest.slice(0, qm);
+  } else if (parseQueryString) {
+    // no query string, but parseQueryString still requested
+    this.search = '';
+    this.query = {};
+  }
+  if (rest) this.pathname = rest;
+  if (slashedProtocol[lowerProto] &&
+      this.hostname && !this.pathname) {
+    this.pathname = '/';
+  }
+
+  //to support http.request
+  if (this.pathname || this.search) {
+    var p = this.pathname || '';
+    var s = this.search || '';
+    this.path = p + s;
+  }
+
+  // finally, reconstruct the href based on what has been validated.
+  this.href = this.format();
+  return this;
+};
+
+// format a parsed object into a url string
+function urlFormat(obj) {
+  // ensure it's an object, and not a string url.
+  // If it's an obj, this is a no-op.
+  // this way, you can call url_format() on strings
+  // to clean up potentially wonky urls.
+  if (util.isString(obj)) obj = urlParse(obj);
+  if (!(obj instanceof Url)) return Url.prototype.format.call(obj);
+  return obj.format();
+}
+
+Url.prototype.format = function() {
+  var auth = this.auth || '';
+  if (auth) {
+    auth = encodeURIComponent(auth);
+    auth = auth.replace(/%3A/i, ':');
+    auth += '@';
+  }
+
+  var protocol = this.protocol || '',
+      pathname = this.pathname || '',
+      hash = this.hash || '',
+      host = false,
+      query = '';
+
+  if (this.host) {
+    host = auth + this.host;
+  } else if (this.hostname) {
+    host = auth + (this.hostname.indexOf(':') === -1 ?
+        this.hostname :
+        '[' + this.hostname + ']');
+    if (this.port) {
+      host += ':' + this.port;
+    }
+  }
+
+  if (this.query &&
+      util.isObject(this.query) &&
+      Object.keys(this.query).length) {
+    query = querystring.stringify(this.query);
+  }
+
+  var search = this.search || (query && ('?' + query)) || '';
+
+  if (protocol && protocol.substr(-1) !== ':') protocol += ':';
+
+  // only the slashedProtocols get the //.  Not mailto:, xmpp:, etc.
+  // unless they had them to begin with.
+  if (this.slashes ||
+      (!protocol || slashedProtocol[protocol]) && host !== false) {
+    host = '//' + (host || '');
+    if (pathname && pathname.charAt(0) !== '/') pathname = '/' + pathname;
+  } else if (!host) {
+    host = '';
+  }
+
+  if (hash && hash.charAt(0) !== '#') hash = '#' + hash;
+  if (search && search.charAt(0) !== '?') search = '?' + search;
+
+  pathname = pathname.replace(/[?#]/g, function(match) {
+    return encodeURIComponent(match);
+  });
+  search = search.replace('#', '%23');
+
+  return protocol + host + pathname + search + hash;
+};
+
+function urlResolve(source, relative) {
+  return urlParse(source, false, true).resolve(relative);
+}
+
+Url.prototype.resolve = function(relative) {
+  return this.resolveObject(urlParse(relative, false, true)).format();
+};
+
+function urlResolveObject(source, relative) {
+  if (!source) return relative;
+  return urlParse(source, false, true).resolveObject(relative);
+}
+
+Url.prototype.resolveObject = function(relative) {
+  if (util.isString(relative)) {
+    var rel = new Url();
+    rel.parse(relative, false, true);
+    relative = rel;
+  }
+
+  var result = new Url();
+  var tkeys = Object.keys(this);
+  for (var tk = 0; tk < tkeys.length; tk++) {
+    var tkey = tkeys[tk];
+    result[tkey] = this[tkey];
+  }
+
+  // hash is always overridden, no matter what.
+  // even href="" will remove it.
+  result.hash = relative.hash;
+
+  // if the relative url is empty, then there's nothing left to do here.
+  if (relative.href === '') {
+    result.href = result.format();
+    return result;
+  }
+
+  // hrefs like //foo/bar always cut to the protocol.
+  if (relative.slashes && !relative.protocol) {
+    // take everything except the protocol from relative
+    var rkeys = Object.keys(relative);
+    for (var rk = 0; rk < rkeys.length; rk++) {
+      var rkey = rkeys[rk];
+      if (rkey !== 'protocol')
+        result[rkey] = relative[rkey];
+    }
+
+    //urlParse appends trailing / to urls like http://www.example.com
+    if (slashedProtocol[result.protocol] &&
+        result.hostname && !result.pathname) {
+      result.path = result.pathname = '/';
+    }
+
+    result.href = result.format();
+    return result;
+  }
+
+  if (relative.protocol && relative.protocol !== result.protocol) {
+    // if it's a known url protocol, then changing
+    // the protocol does weird things
+    // first, if it's not file:, then we MUST have a host,
+    // and if there was a path
+    // to begin with, then we MUST have a path.
+    // if it is file:, then the host is dropped,
+    // because that's known to be hostless.
+    // anything else is assumed to be absolute.
+    if (!slashedProtocol[relative.protocol]) {
+      var keys = Object.keys(relative);
+      for (var v = 0; v < keys.length; v++) {
+        var k = keys[v];
+        result[k] = relative[k];
+      }
+      result.href = result.format();
+      return result;
+    }
+
+    result.protocol = relative.protocol;
+    if (!relative.host && !hostlessProtocol[relative.protocol]) {
+      var relPath = (relative.pathname || '').split('/');
+      while (relPath.length && !(relative.host = relPath.shift()));
+      if (!relative.host) relative.host = '';
+      if (!relative.hostname) relative.hostname = '';
+      if (relPath[0] !== '') relPath.unshift('');
+      if (relPath.length < 2) relPath.unshift('');
+      result.pathname = relPath.join('/');
+    } else {
+      result.pathname = relative.pathname;
+    }
+    result.search = relative.search;
+    result.query = relative.query;
+    result.host = relative.host || '';
+    result.auth = relative.auth;
+    result.hostname = relative.hostname || relative.host;
+    result.port = relative.port;
+    // to support http.request
+    if (result.pathname || result.search) {
+      var p = result.pathname || '';
+      var s = result.search || '';
+      result.path = p + s;
+    }
+    result.slashes = result.slashes || relative.slashes;
+    result.href = result.format();
+    return result;
+  }
+
+  var isSourceAbs = (result.pathname && result.pathname.charAt(0) === '/'),
+      isRelAbs = (
+          relative.host ||
+          relative.pathname && relative.pathname.charAt(0) === '/'
+      ),
+      mustEndAbs = (isRelAbs || isSourceAbs ||
+                    (result.host && relative.pathname)),
+      removeAllDots = mustEndAbs,
+      srcPath = result.pathname && result.pathname.split('/') || [],
+      relPath = relative.pathname && relative.pathname.split('/') || [],
+      psychotic = result.protocol && !slashedProtocol[result.protocol];
+
+  // if the url is a non-slashed url, then relative
+  // links like ../.. should be able
+  // to crawl up to the hostname, as well.  This is strange.
+  // result.protocol has already been set by now.
+  // Later on, put the first path part into the host field.
+  if (psychotic) {
+    result.hostname = '';
+    result.port = null;
+    if (result.host) {
+      if (srcPath[0] === '') srcPath[0] = result.host;
+      else srcPath.unshift(result.host);
+    }
+    result.host = '';
+    if (relative.protocol) {
+      relative.hostname = null;
+      relative.port = null;
+      if (relative.host) {
+        if (relPath[0] === '') relPath[0] = relative.host;
+        else relPath.unshift(relative.host);
+      }
+      relative.host = null;
+    }
+    mustEndAbs = mustEndAbs && (relPath[0] === '' || srcPath[0] === '');
+  }
+
+  if (isRelAbs) {
+    // it's absolute.
+    result.host = (relative.host || relative.host === '') ?
+                  relative.host : result.host;
+    result.hostname = (relative.hostname || relative.hostname === '') ?
+                      relative.hostname : result.hostname;
+    result.search = relative.search;
+    result.query = relative.query;
+    srcPath = relPath;
+    // fall through to the dot-handling below.
+  } else if (relPath.length) {
+    // it's relative
+    // throw away the existing file, and take the new path instead.
+    if (!srcPath) srcPath = [];
+    srcPath.pop();
+    srcPath = srcPath.concat(relPath);
+    result.search = relative.search;
+    result.query = relative.query;
+  } else if (!util.isNullOrUndefined(relative.search)) {
+    // just pull out the search.
+    // like href='?foo'.
+    // Put this after the other two cases because it simplifies the booleans
+    if (psychotic) {
+      result.hostname = result.host = srcPath.shift();
+      //occationaly the auth can get stuck only in host
+      //this especially happens in cases like
+      //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
+      var authInHost = result.host && result.host.indexOf('@') > 0 ?
+                       result.host.split('@') : false;
+      if (authInHost) {
+        result.auth = authInHost.shift();
+        result.host = result.hostname = authInHost.shift();
+      }
+    }
+    result.search = relative.search;
+    result.query = relative.query;
+    //to support http.request
+    if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
+      result.path = (result.pathname ? result.pathname : '') +
+                    (result.search ? result.search : '');
+    }
+    result.href = result.format();
+    return result;
+  }
+
+  if (!srcPath.length) {
+    // no path at all.  easy.
+    // we've already handled the other stuff above.
+    result.pathname = null;
+    //to support http.request
+    if (result.search) {
+      result.path = '/' + result.search;
+    } else {
+      result.path = null;
+    }
+    result.href = result.format();
+    return result;
+  }
+
+  // if a url ENDs in . or .., then it must get a trailing slash.
+  // however, if it ends in anything else non-slashy,
+  // then it must NOT get a trailing slash.
+  var last = srcPath.slice(-1)[0];
+  var hasTrailingSlash = (
+      (result.host || relative.host || srcPath.length > 1) &&
+      (last === '.' || last === '..') || last === '');
+
+  // strip single dots, resolve double dots to parent dir
+  // if the path tries to go above the root, `up` ends up > 0
+  var up = 0;
+  for (var i = srcPath.length; i >= 0; i--) {
+    last = srcPath[i];
+    if (last === '.') {
+      srcPath.splice(i, 1);
+    } else if (last === '..') {
+      srcPath.splice(i, 1);
+      up++;
+    } else if (up) {
+      srcPath.splice(i, 1);
+      up--;
+    }
+  }
+
+  // if the path is allowed to go above the root, restore leading ..s
+  if (!mustEndAbs && !removeAllDots) {
+    for (; up--; up) {
+      srcPath.unshift('..');
+    }
+  }
+
+  if (mustEndAbs && srcPath[0] !== '' &&
+      (!srcPath[0] || srcPath[0].charAt(0) !== '/')) {
+    srcPath.unshift('');
+  }
+
+  if (hasTrailingSlash && (srcPath.join('/').substr(-1) !== '/')) {
+    srcPath.push('');
+  }
+
+  var isAbsolute = srcPath[0] === '' ||
+      (srcPath[0] && srcPath[0].charAt(0) === '/');
+
+  // put the host back
+  if (psychotic) {
+    result.hostname = result.host = isAbsolute ? '' :
+                                    srcPath.length ? srcPath.shift() : '';
+    //occationaly the auth can get stuck only in host
+    //this especially happens in cases like
+    //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
+    var authInHost = result.host && result.host.indexOf('@') > 0 ?
+                     result.host.split('@') : false;
+    if (authInHost) {
+      result.auth = authInHost.shift();
+      result.host = result.hostname = authInHost.shift();
+    }
+  }
+
+  mustEndAbs = mustEndAbs || (result.host && srcPath.length);
+
+  if (mustEndAbs && !isAbsolute) {
+    srcPath.unshift('');
+  }
+
+  if (!srcPath.length) {
+    result.pathname = null;
+    result.path = null;
+  } else {
+    result.pathname = srcPath.join('/');
+  }
+
+  //to support request.http
+  if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
+    result.path = (result.pathname ? result.pathname : '') +
+                  (result.search ? result.search : '');
+  }
+  result.auth = relative.auth || result.auth;
+  result.slashes = result.slashes || relative.slashes;
+  result.href = result.format();
+  return result;
+};
+
+Url.prototype.parseHost = function() {
+  var host = this.host;
+  var port = portPattern.exec(host);
+  if (port) {
+    port = port[0];
+    if (port !== ':') {
+      this.port = port.substr(1);
+    }
+    host = host.substr(0, host.length - port.length);
+  }
+  if (host) this.hostname = host;
+};
+
+},{"./util":82,"punycode":55,"querystring":58}],82:[function(require,module,exports){
+'use strict';
+
+module.exports = {
+  isString: function(arg) {
+    return typeof(arg) === 'string';
+  },
+  isObject: function(arg) {
+    return typeof(arg) === 'object' && arg !== null;
+  },
+  isNull: function(arg) {
+    return arg === null;
+  },
+  isNullOrUndefined: function(arg) {
+    return arg == null;
+  }
+};
+
+},{}],83:[function(require,module,exports){
 (function (global){
 
 /**
@@ -12232,4 +15773,25 @@ function config (name) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}]},{},[1]);
+},{}],84:[function(require,module,exports){
+module.exports = extend
+
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function extend() {
+    var target = {}
+
+    for (var i = 0; i < arguments.length; i++) {
+        var source = arguments[i]
+
+        for (var key in source) {
+            if (hasOwnProperty.call(source, key)) {
+                target[key] = source[key]
+            }
+        }
+    }
+
+    return target
+}
+
+},{}]},{},[39]);
