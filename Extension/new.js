@@ -7166,8 +7166,14 @@ function sendData(input, hostname, href){
     	.algo("vneogi199/FetchURLFeatures/1.0.2")
     	.pipe(hostname)
     	.then(function(output){
-    		input=input.replace("GoogleIndex28",output.result[0]);
-    		input=input.replace("SSL8",output.result[1]);
+            if(output.result){
+              input=input.replace("GoogleIndex28",output.result[0]);
+              input=input.replace("SSL8",output.result[1]);
+            }
+            else{
+                input=input.replace("GoogleIndex28",1);
+                input=input.replace("SSL8",1);
+            }
     		console.log(input);
     		Algorithmia.client("***REMOVED***")
 	    	.algo("vneogi199/ScikitRandomForest/2.0.0")
