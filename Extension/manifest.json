@@ -9,7 +9,7 @@
   },
   "content_scripts": [{
     "css": ["styles.css"],
-    "js": ["new.js"],
+    "js": ["FinalBundle.js"],
     "matches": ["<all_urls>"]
   }
 ]
