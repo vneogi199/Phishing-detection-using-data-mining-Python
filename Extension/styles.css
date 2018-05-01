@@ -11,6 +11,8 @@
   opacity:0.7;
   color:white;
   font-size:20px;
+  text-align: left !important;
+
 }
 
 #se-pre-con h1{
@@ -26,14 +28,15 @@
   font-size: 30px;
 }
 #se-pre-con img{
-  padding-left:100px;
+  margin-left:10%;
   height:180px;
   width:300px;
 }
 
 #del a{
   cursor:pointer;
-  padding-left:100px;
+  margin-left:10%;
   color: white;
   font-size: 20px;
+
 }
