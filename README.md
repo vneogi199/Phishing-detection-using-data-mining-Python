@@ -3,10 +3,10 @@ This Project is a part of our B.E. Project.
 
 This was a Group Project, which included the following members:
 
-        Mehek Thaker
-        Mihir Parikh
-        Vinit Neogi
-        Preetika Shetty.
+        Mehek Thaker (@mehekthaker)
+        Mihir Parikh (@parikhmihir)
+        Vinit Neogi (@vneogi199)
+        Preetika Shetty (@Preetika96)
         
 Here, we have implemented detection of phishing websites using Data Mining approach.
 
